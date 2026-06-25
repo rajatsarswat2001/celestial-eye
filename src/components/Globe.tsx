@@ -45,9 +45,27 @@ const darkMatterLayer = new Cesium.ImageryLayer(
   })
 );
 
+// Tuned for mobile robustness: failIfMajorPerformanceCaveat=false lets
+// devices that would otherwise refuse a WebGL context (older/weaker mobile
+// GPUs, or a GPU temporarily under memory pressure from other tabs) fall
+// back to a lower-tier context instead of failing outright. antialias=false
+// and powerPreference="default" reduce the memory/GPU footprint, which is
+// the main lever against context loss on phones.
+const webglContextOptions: Cesium.ContextOptions = {
+  webgl: {
+    alpha: false,
+    antialias: false,
+    powerPreference: "default",
+    failIfMajorPerformanceCaveat: false,
+    preserveDrawingBuffer: false,
+  },
+  allowTextureFilterAnisotropic: false,
+};
+
 export default function Globe({ onPick, picked, satelliteBlips, issPosition }: GlobeProps) {
   const viewerRef = useRef<{ cesiumElement?: Cesium.Viewer }>(null);
   const [ready, setReady] = useState(false);
+  const [contextLost, setContextLost] = useState(false);
 
   const handleClick = useCallback(
     (movement: { position: Cesium.Cartesian2 }) => {
@@ -70,7 +88,19 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
 
   useEffect(() => {
     let handler: Cesium.ScreenSpaceEventHandler | undefined;
+    let canvas: HTMLCanvasElement | undefined;
     let cancelled = false;
+
+    function onContextLost(e: Event) {
+      // WebGL contexts get reclaimed by the OS/browser under memory
+      // pressure — common on phones, especially with several tabs open.
+      // The default behavior with no listener is for the whole page to
+      // hard-crash on mobile Chrome ("This page couldn't load"). Calling
+      // preventDefault keeps the page alive long enough to show a real
+      // recovery message instead of dying silently.
+      e.preventDefault();
+      setContextLost(true);
+    }
 
     // resium constructs the underlying Cesium.Viewer inside its own
     // mount-time effects, which normally finish before this parent effect
@@ -97,6 +127,9 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0b1220");
       viewer.scene.fog.enabled = false;
 
+      canvas = viewer.scene.canvas;
+      canvas.addEventListener("webglcontextlost", onContextLost, false);
+
       handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
       handler.setInputAction(handleClick, Cesium.ScreenSpaceEventType.LEFT_CLICK);
       setReady(true);
@@ -107,8 +140,38 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
     return () => {
       cancelled = true;
       handler?.destroy();
+      canvas?.removeEventListener("webglcontextlost", onContextLost, false);
     };
   }, [handleClick]);
+
+  // requestRenderMode means Cesium won't auto-redraw when our React-driven
+  // entity props change (new satellite positions, picked point, etc.) — we
+  // have to explicitly ask for a render each time those change.
+  useEffect(() => {
+    viewerRef.current?.cesiumElement?.scene.requestRender();
+  }, [picked, satelliteBlips, issPosition, ready]);
+
+  if (contextLost) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-void">
+        <div className="rounded border border-panel-edge bg-panel px-5 py-4 text-center">
+          <p className="font-mono text-xs uppercase tracking-wider text-amber">
+            Graphics context lost
+          </p>
+          <p className="mt-2 max-w-xs font-mono text-[11px] text-grey">
+            Your device reclaimed graphics memory, often from too many open
+            tabs. Close some tabs, then reload.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-3 rounded bg-cyan-dim px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-cyan"
+          >
+            Reload
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="absolute inset-0">
@@ -127,6 +190,10 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
         selectionIndicator={false}
         baseLayer={darkMatterLayer}
         skyBox={false}
+        contextOptions={webglContextOptions}
+        requestRenderMode
+        maximumRenderTimeChange={Infinity}
+        msaaSamples={1}
       >
         {ready && picked && (
           <Entity position={Cesium.Cartesian3.fromDegrees(picked.lon, picked.lat, 0)}>
