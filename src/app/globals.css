@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+:root {
+  --void: #05080d;
+  --panel: #0b1220;
+  --panel-edge: #1b2740;
+  --cyan: #27e1c1;
+  --cyan-dim: #16554a;
+  --amber: #ff8a3d;
+  --grey: #5b6b82;
+  --ink: #e8ecf1;
+}
+
+@theme inline {
+  --color-void: var(--void);
+  --color-panel: var(--panel);
+  --color-panel-edge: var(--panel-edge);
+  --color-cyan: var(--cyan);
+  --color-cyan-dim: var(--cyan-dim);
+  --color-amber: var(--amber);
+  --color-grey: var(--grey);
+  --color-ink: var(--ink);
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-sans: Inter, system-ui, sans-serif;
+}
+
+html, body {
+  background: var(--void);
+  color: var(--ink);
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: var(--cyan);
+  color: var(--void);
+}
+
+/* Tabular figures for every numeric readout — radar data never jitters */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+@keyframes radar-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Cesium overrides: restyle (not hide) default chrome to match the HUD.
+   CARTO/OpenStreetMap attribution must stay visible per their terms, so we
+   reposition and restyle the credit line rather than removing it. */
+.cesium-viewer-bottom {
+  bottom: 0 !important;
+  left: 0 !important;
+  right: auto !important;
+}
+.cesium-widget-credits {
+  background: rgba(5, 8, 13, 0.7) !important;
+  padding: 2px 8px !important;
+  font-family: var(--font-mono) !important;
+  font-size: 10px !important;
+  color: var(--grey) !important;
+}
+.cesium-credit-textContainer a {
+  color: var(--grey) !important;
+}
+.cesium-credit-expand-link {
+  display: none !important;
+}
