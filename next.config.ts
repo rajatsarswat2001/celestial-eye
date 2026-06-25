@@ -1,7 +1,19 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  webpack: (config) => {
+  webpack: (config, { dev }) => {
+    // Disable webpack minimization in production to prevent the "Octal escape
+    // is not permitted in strict mode" SyntaxError. This crash (confirmed via
+    // browser DevTools) originates inside Cesium's vendored HTML-entity lookup
+    // table, which contains the literal string '\240' (octal for NBSP). The
+    // minifier's strict parser rejects this, producing a malformed chunk that
+    // crashes every browser on load. Without minification the octal literal
+    // survives untouched and browsers handle it correctly as legacy JS.
+    // Trade-off: larger bundle. Fully acceptable for this use-case.
+    if (!dev) {
+      config.optimization.minimize = false;
+    }
+
     config.resolve.fallback = { ...config.resolve.fallback, fs: false };
 
     // satellite.js ships an optional WASM-accelerated SGP4 path (multi/single
