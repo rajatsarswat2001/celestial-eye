@@ -25,7 +25,7 @@ Built for AstralWeb Innovate Round 2.
 |---|---|
 | 3D globe & coordinate picking | [CesiumJS](https://cesium.com/platform/cesiumjs/) via [Resium](https://resium.reearth.io/) |
 | Base map tiles | [CARTO Dark Matter](https://github.com/CartoDB/basemap-styles) (free, keyless, OSM-derived) |
-| Satellites (ISS + ~8,000 active) | [CelesTrak](https://celestrak.org) GP/OMM element sets, propagated client-side with [satellite.js](https://github.com/shashwatak/satellite.js) (SGP4) |
+| Satellites (ISS + active (~12,000-object cap)) | [CelesTrak](https://celestrak.org) GP/OMM element sets, propagated client-side with [satellite.js](https://github.com/shashwatak/satellite.js) (SGP4) |
 | Sun, Moon, planets | [astronomy-engine](https://github.com/cosinekitty/astronomy-engine), computed client-side |
 | Live ISS fix | [Open Notify](http://open-notify.org/Open-Notify-API/ISS-Location-Now/) |
 
@@ -50,7 +50,7 @@ request) and the more honest engineering choice.
 - **CelesTrak** explicitly asks API consumers not to poll on every page
   load — their TLE/OMM data only refreshes a few times a day, and they
   firewall IPs that hammer the endpoint. `/api/satellites` fetches once per
-  server instance and caches the full ~8,000-object active-satellite catalog
+  server instance and caches the active-satellite catalog (capped at 12,000 objects, with fields trimmed to only what SGP4 needs)
   in memory for 2 hours.
 - **Open Notify** has no published rate limit but also no auth — every
   browser tab polling it directly would multiply load on a free public
@@ -67,6 +67,21 @@ This is built to look like a tracking-station instrument console, not a
 tourist globe — dark void background, phosphor-cyan/amber readouts,
 monospace tabular numerals throughout, and a literal rotating radar sweep
 as the signature visual element, anchored at whatever point is picked.
+
+### Why satellite records are trimmed to 12 fields and capped at 12,000
+
+Vercel serverless functions hard-cap response bodies at 4.5MB. CelesTrak's
+"active satellites" group has grown to roughly 18,000 objects as of mid-2026
+(mega-constellation growth, mainly Starlink) — passing through every OMM
+field for all of them landed right at that ceiling and intermittently broke
+the deployed site outright (the page would load its shell, then the
+`/api/satellites` response would get cut off, and the resulting parse
+failure cascaded into a hard crash rather than a catchable error). The fix:
+strip every record down to the ~12 fields `json2satrec` actually reads,
+which on their own come in well under the limit, plus a runtime safety net
+that re-checks the real serialized size and shrinks the catalog further if
+it's ever still too close to the limit — so this can't silently break again
+if the catalog keeps growing.
 
 ## Setup
 
@@ -115,7 +130,7 @@ scripts/
 
 ## Known limitations
 
-- The active-satellite catalog (~8,000 objects) is propagated entirely in
+- The active-satellite catalog (capped at 12,000 objects) is propagated entirely in
   the browser on each tick. This is fast in practice (SGP4 per object is
   cheap), but very low-end devices may notice it.
 - A handful of TLEs in any given CelesTrak catalog snapshot are stale or
