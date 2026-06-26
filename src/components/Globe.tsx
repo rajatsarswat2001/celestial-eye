@@ -27,12 +27,13 @@ if (typeof window !== "undefined") {
   Cesium.Ion.defaultAccessToken = "";
 }
 
-// Define a free, high-res realistic satellite imagery base layer (Esri World Imagery)
+// Define a free, highly performant and lightweight dark theme base layer (Carto Dark)
 const earthImageryLayer = new Cesium.ImageryLayer(
   new Cesium.UrlTemplateImageryProvider({
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    maximumLevel: 19,
-    credit: "Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    subdomains: ["a", "b", "c", "d"],
+    maximumLevel: 10,
+    credit: new Cesium.Credit('© OpenStreetMap contributors © CARTO', true)
   })
 );
 
