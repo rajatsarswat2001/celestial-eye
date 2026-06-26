@@ -9,15 +9,12 @@ Built for AstralWeb Innovate Round 2.
 
 ## What it does
 
-- Click anywhere on the 3D globe (or type coordinates manually) to lock a
-  ground position.
-- A radar-sweep HUD shows every tracked body plotted by azimuth and
-  elevation, closest-to-zenith first.
-- A side panel lists every object currently above the horizon, ranked by how
-  close it is to dead-overhead, with live altitude/azimuth readouts that
-  update every 2 seconds.
-- Satellites near the picked location are also plotted directly on the globe
-  at their real sub-points, with the ISS specially marked.
+- **Interactive 3D Globe**: Built on CesiumJS, featuring a highly optimized CARTO Dark Matter base map that performs smoothly on any device.
+- **Searchable Live Catalog**: A left sidebar lists the entire active satellite catalog. It can be filtered by categories like Starlink or the ISS, and searched by name or NORAD ID.
+- **Proximity Sorting**: Tap anywhere on the Earth, and the catalog instantly re-sorts to show you exactly which satellites are closest to that specific location!
+- **Real-Time Telemetry**: Clicking a satellite opens a right sidebar displaying its live Altitude, Velocity, Inclination, Orbital Period, and Ground Track.
+- **Visual Target Locks**: Selected satellites are highlighted in brilliant **Neon Pink** with a glowing orbital trail and a "TARGET LOCKED" label, making tracking intuitive.
+- **Mobile Responsive**: The entire dashboard collapses cleanly on mobile devices. The sidebars convert into toggleable sliding drawers so the globe is always front-and-center.
 
 ## How it works
 
@@ -63,10 +60,7 @@ so a transient outage degrades gracefully instead of breaking the UI.
 
 ### The HUD aesthetic
 
-This is built to look like a tracking-station instrument console, not a
-tourist globe — dark void background, phosphor-cyan/amber readouts,
-monospace tabular numerals throughout, and a literal rotating radar sweep
-as the signature visual element, anchored at whatever point is picked.
+This is built to look like a premium, modern tracking-station dashboard. We completely overhauled the UI using a dark void background (`#060C16`), phosphor-cyan accents (`#27e1c1`), and bright neon pink (`#FF0055`) for active target locking. Monospace tabular numerals are used throughout the telemetry readouts for a high-tech sci-fi aesthetic. The layout is fully responsive, utilizing Tailwind CSS grids to adapt flawlessly to both ultra-wide desktop monitors and mobile phone screens.
 
 ### Why satellite records are trimmed to 12 fields and capped at 12,000
 
@@ -141,9 +135,7 @@ src/
     api/satellites/route.ts — cached CelesTrak proxy
     api/iss/route.ts        — cached Open Notify proxy
   components/
-    Globe.tsx              — Cesium viewer, click-to-pick, entity rendering
-    RadarSweep.tsx          — the rotating radar HUD overlay
-    TrackedList.tsx         — ranked list of currently-overhead objects
+    Globe.tsx              — Cesium viewer, click-to-pick, rendering targets and trails
   lib/
     celestial.ts            — Sun/Moon/planet positions (astronomy-engine)
     satellites.ts            — TLE propagation & look angles (satellite.js)
