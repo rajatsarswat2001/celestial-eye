@@ -241,14 +241,23 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
                 position={Cesium.Cartesian3.fromDegrees(blip.lon, blip.lat, 0)}
               >
                 <PointGraphics
-                  pixelSize={blip.isIss ? 9 : isSelected ? 10 : 4}
+                  pixelSize={blip.isIss ? 9 : isSelected ? 16 : 4}
                   color={Cesium.Color.fromCssColorString(color)}
                   outlineColor={Cesium.Color.fromCssColorString(
                     isSelected ? "#27e1c1" : "#020408"
                   )}
-                  outlineWidth={isSelected ? 3 : 1}
+                  outlineWidth={isSelected ? 4 : 1}
                   disableDepthTestDistance={Number.POSITIVE_INFINITY}
                 />
+                {isSelected && (
+                  <LabelGraphics
+                    text="TARGET LOCKED"
+                    font="bold 10px monospace"
+                    fillColor={Cesium.Color.fromCssColorString("#27e1c1")}
+                    pixelOffset={new Cesium.Cartesian2(0, -20)}
+                    disableDepthTestDistance={Number.POSITIVE_INFINITY}
+                  />
+                )}
               </Entity>
             );
           })}

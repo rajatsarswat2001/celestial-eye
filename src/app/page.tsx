@@ -11,7 +11,6 @@ import {
   getSatelliteTrail,
   getSatelliteTelemetry,
 } from "@/lib/satellites";
-import RadarGlobe, { type RadarSat } from "@/components/RadarGlobe";
 
 // Cesium touches `window` at module load time — SSR must be disabled.
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
@@ -20,7 +19,7 @@ const TICK_MS = 2000;
 const SATELLITE_REFRESH_MS = 2 * 60 * 60 * 1000;
 const ISS_REFRESH_MS = 5000;
 
-const CATEGORIES = ["ALL", "STATION", "STARLINK", "WEATHER", "DEBRIS", "ROCKET BODY", "SATELLITE"];
+const CATEGORIES = ["ALL", "STATION", "STARLINK", "SATELLITE"];
 
 // ─── ORBITAL ROW COMPONENT ───────────────────────────────────────────────────
 function OrbRow({ label, val, accent }: { label: string; val: string; accent?: string }) {
@@ -56,7 +55,6 @@ export default function CelestialEyeDashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [category, setCategory] = useState("ALL");
   const [search, setSearch] = useState("");
-  const [globeMode, setGlobeMode] = useState("3D GLOBE");
   const [utc, setUtc] = useState("");
   
   // Mobile UI States
@@ -195,21 +193,6 @@ export default function CelestialEyeDashboard() {
     if (!omm) return null;
     return getSatelliteTelemetry(omm, now);
   }, [selectedId, satCatalog, now]);
-
-  // Map to RadarGlobe props
-  const radarSatellites: RadarSat[] = useMemo(() => {
-    return overheadSatellites.map(s => {
-      const omm = satCatalog.find(c => `sat-${c.NORAD_CAT_ID}` === s.id);
-      return {
-        id: s.id,
-        name: s.name,
-        lat: s.subLat,
-        lng: s.subLon,
-        inc: omm ? Number(omm.INCLINATION) : 0,
-        status: "TRACKING"
-      };
-    });
-  }, [overheadSatellites, satCatalog]);
 
   const handlePick = useCallback((coord: PickedCoordinate) => {
     setPicked(coord);
@@ -358,46 +341,29 @@ export default function CelestialEyeDashboard() {
                 ECI FRAME · REAL-TIME
               </span>
             </div>
-            <div className="flex gap-1.5">
-              {["2D RADAR", "3D GLOBE"].map((mode) => (
-                <button key={mode} onClick={() => setGlobeMode(mode)} className={`
-                  text-[8px] px-2 py-1 rounded-[3px] font-['Orbitron'] tracking-[1px] border
-                  ${globeMode === mode ? "bg-[#1A3060] border-blue-500 text-blue-400" : "bg-transparent border-[#1A2744] text-[#6B8CAE]"}
-                `}>
-                  {mode}
-                </button>
-              ))}
-            </div>
           </div>
 
-          <div className={`flex-1 flex items-center justify-center relative ${globeMode === "2D RADAR" ? "p-4" : "p-0"}`} 
-               style={{ background: globeMode === "2D RADAR" ? "radial-gradient(ellipse at center, #0D1A30 0%, #060C16 70%)" : "#000" }}>
+          <div className="flex-1 flex items-center justify-center relative p-0 bg-black">
             
-            {globeMode === "2D RADAR" ? (
-              <div className="relative w-full max-w-[440px] aspect-square z-[1]">
-                <RadarGlobe satellites={radarSatellites} selectedId={selectedId} />
-              </div>
-            ) : (
-              <div className="absolute inset-0 z-[1] touch-none">
-                <Globe
-                  onPick={handlePick}
-                  picked={picked}
-                  satelliteBlips={satelliteBlips}
-                  issPosition={issRaw}
-                  selectedId={selectedId}
-                  satelliteTrails={satelliteTrails}
-                />
-                
-                {/* Instruction overlay for empty state */}
-                {!picked && (
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-center px-4 w-full">
-                    <div className="inline-block px-4 py-2 rounded border border-blue-500/30 bg-blue-500/10 backdrop-blur-md">
-                      <p className="font-mono text-[10px] sm:text-xs text-blue-400">Tap anywhere on the globe to set observer position</p>
-                    </div>
+            <div className="absolute inset-0 z-[1] touch-none">
+              <Globe
+                onPick={handlePick}
+                picked={picked}
+                satelliteBlips={satelliteBlips}
+                issPosition={issRaw}
+                selectedId={selectedId}
+                satelliteTrails={satelliteTrails}
+              />
+              
+              {/* Instruction overlay for empty state */}
+              {!picked && (
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-center px-4 w-full">
+                  <div className="inline-block px-4 py-2 rounded border border-blue-500/30 bg-blue-500/10 backdrop-blur-md">
+                    <p className="font-mono text-[10px] sm:text-xs text-blue-400">Tap anywhere on the globe to set observer position</p>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
 
             {/* HUD corners - hide on mobile when panels are open */}
             <div className={`${isLeftPanelOpen || isRightPanelOpen ? "hidden md:block" : "block"}`}>
