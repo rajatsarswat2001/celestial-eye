@@ -5,6 +5,14 @@ import "@fontsource/inter/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "@fontsource/ibm-plex-mono/600.css";
+// Cesium's widget CSS gives the viewer's canvas container its sizing rules
+// (width:100%/height:100% chain down to the actual <canvas>). Without this,
+// nothing constrains the canvas to fill its parent — which is exactly why
+// the globe was rendering tiny and stuck in a corner: the container divs
+// were sized correctly, but Cesium's own internal widget classes had no
+// rules applied to them at all, so the canvas fell back to whatever
+// unstyled size resulted.
+import "cesium/Source/Widgets/widgets.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
