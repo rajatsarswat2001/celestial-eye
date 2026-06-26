@@ -83,6 +83,29 @@ that re-checks the real serialized size and shrinks the catalog further if
 it's ever still too close to the limit — so this can't silently break again
 if the catalog keeps growing.
 
+### Why minification is disabled in production
+
+The deployed site initially crashed on every browser and device with
+`Uncaught SyntaxError: Octal escape`, immediately followed by a
+`ChunkLoadError`. That's a parse-time failure, not a runtime one — Terser
+(Next's default production minifier) produced a chunk containing a legacy
+octal escape sequence (most likely from an HTML-entity lookup table inside
+Cesium's bundled credit/label-rendering code, e.g. `'nbsp': '\240'`-style
+entries), which is invalid under strict mode and JS modules are always
+strict. The browser couldn't parse that chunk at all, so it never
+registered with webpack's module system, and the very next chunk that
+depended on it failed to load — which is why the page rendered its initial
+shell for a moment and then died identically everywhere, regardless of
+device or GPU.
+
+This was confirmed directly: building with minification on, every produced
+`.js` chunk was checked with `node --check`, and the build is set up so this
+class of bug can't silently ship again — minification is off, and every
+chunk has been verified to parse cleanly. The tradeoff is a larger
+JS payload (Cesium dominates this either way), which is an acceptable
+cost for a deadline fix; pinpointing and patching the exact source string
+inside Cesium's vendored bundle would be the cleaner long-term fix.
+
 ## Setup
 
 ```bash

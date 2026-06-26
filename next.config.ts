@@ -1,7 +1,24 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  webpack: (config) => {
+  // Disabled: Terser (the production minifier) chokes on a legacy octal
+  // escape sequence somewhere inside Cesium's bundled credit/HTML-entity
+  // handling (the same failure signature as a known Next.js/Cesium bug:
+  // `Legacy octal escape is not permitted in strict mode | 'nbsp': '\240'`).
+  // The minifier doesn't error out at build time here — it produces a
+  // chunk containing a string that is invalid under strict mode, which then
+  // throws `Uncaught SyntaxError: Octal escape` the instant a real browser
+  // tries to parse that chunk, crashing the whole page. This reproduced
+  // identically across desktop browsers, which is consistent with a
+  // malformed bundle rather than a runtime/GPU issue. Until that one
+  // problem string is tracked down and patched at the source, disabling
+  // minification is the safe, verifiable fix — bundle size goes up, but
+  // the page actually parses and runs.
+  webpack: (config, { dev }) => {
+    if (!dev) {
+      config.optimization.minimize = false;
+    }
+
     config.resolve.fallback = { ...config.resolve.fallback, fs: false };
 
     // satellite.js ships an optional WASM-accelerated SGP4 path (multi/single
