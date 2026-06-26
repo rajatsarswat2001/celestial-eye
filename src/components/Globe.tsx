@@ -234,7 +234,7 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
             const color = blip.isIss
               ? "#ff8a3d"
               : isSelected
-                ? "#27e1c1"
+                ? "#FF0055"
                 : "#3d5a7a";
             return (
               <Entity
@@ -245,7 +245,7 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
                   pixelSize={blip.isIss ? 9 : isSelected ? 16 : 4}
                   color={Cesium.Color.fromCssColorString(color)}
                   outlineColor={Cesium.Color.fromCssColorString(
-                    isSelected ? "#27e1c1" : "#020408"
+                    isSelected ? "#FF0055" : "#020408"
                   )}
                   outlineWidth={isSelected ? 4 : 1}
                   disableDepthTestDistance={Number.POSITIVE_INFINITY}
@@ -254,7 +254,7 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
                   <LabelGraphics
                     text="TARGET LOCKED"
                     font="bold 10px monospace"
-                    fillColor={Cesium.Color.fromCssColorString("#27e1c1")}
+                    fillColor={Cesium.Color.fromCssColorString("#FF0055")}
                     pixelOffset={new Cesium.Cartesian2(0, -20)}
                     disableDepthTestDistance={Number.POSITIVE_INFINITY}
                   />
@@ -299,7 +299,7 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
                     glowPower: trail.id === "iss" ? 0.1 : 0.25,
                     taperPower: 0.5,
                     color: Cesium.Color.fromCssColorString(
-                      trail.id === "iss" ? "#ff8a3d" : "#00ffff"
+                      trail.id === "iss" ? "#ff8a3d" : "#FF0055"
                     ).withAlpha(trail.id === "iss" ? 0.5 : 0.85),
                   })
                 }
