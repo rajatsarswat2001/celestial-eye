@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Viewer, Entity, PointGraphics, LabelGraphics } from "resium";
+import { Viewer, Entity, PointGraphics, LabelGraphics, PolylineGraphics } from "resium";
 import * as Cesium from "cesium";
 
 export interface PickedCoordinate {
@@ -17,6 +17,8 @@ interface GlobeProps {
   issPosition?: { lat: number; lon: number } | null;
   /** ID of the currently selected satellite — gets a halo on the globe */
   selectedId?: string | null;
+  /** Orbital trails for satellites */
+  satelliteTrails?: { id: string; points: { lat: number; lon: number }[] }[];
 }
 
 // Cesium needs to know where to load its workers/assets from at runtime.
@@ -49,13 +51,22 @@ const webglContextOptions: Cesium.ContextOptions = {
   allowTextureFilterAnisotropic: false,
 };
 
-export default function Globe({ onPick, picked, satelliteBlips, issPosition, selectedId }: GlobeProps) {
+export default function Globe({ onPick, picked, satelliteBlips, issPosition, selectedId, satelliteTrails }: GlobeProps) {
   const viewerRef = useRef<{ cesiumElement?: Cesium.Viewer }>(null);
   const [ready, setReady] = useState(false);
   const [contextLost, setContextLost] = useState(false);
+  
+  // Track interaction states for the auto-rotation idle loop
+  const pickedRef = useRef(picked);
+  const selectedIdRef = useRef(selectedId);
+  const lastInteractionRef = useRef(Date.now());
+  
+  useEffect(() => { pickedRef.current = picked; }, [picked]);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
 
   const handleClick = useCallback(
     (movement: { position: Cesium.Cartesian2 }) => {
+      lastInteractionRef.current = Date.now();
       const viewer = viewerRef.current?.cesiumElement;
       if (!viewer) return;
 
@@ -77,6 +88,8 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
     let handler: Cesium.ScreenSpaceEventHandler | undefined;
     let canvas: HTMLCanvasElement | undefined;
     let cancelled = false;
+    let clockRefCleanup: Cesium.Clock | undefined;
+    let tickListenerCleanup: (() => void) | undefined;
 
     function onContextLost(e: Event) {
       e.preventDefault();
@@ -106,6 +119,8 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
       viewer.scene.globe.showGroundAtmosphere = false;
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0a0f1a");
       viewer.scene.fog.enabled = false;
+      viewer.scene.globe.enableLighting = true;
+      viewer.clock.shouldAnimate = true;
 
       function frameGlobe() {
         if (activeViewer.isDestroyed()) return;
@@ -123,8 +138,28 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
       canvas = viewer.scene.canvas;
       canvas.addEventListener("webglcontextlost", onContextLost, false);
 
+      const markInteraction = () => { lastInteractionRef.current = Date.now(); };
       handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
       handler.setInputAction(handleClick, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+      handler.setInputAction(markInteraction, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+      handler.setInputAction(markInteraction, Cesium.ScreenSpaceEventType.RIGHT_DOWN);
+      handler.setInputAction(markInteraction, Cesium.ScreenSpaceEventType.MIDDLE_DOWN);
+      handler.setInputAction(markInteraction, Cesium.ScreenSpaceEventType.WHEEL);
+      handler.setInputAction(markInteraction, Cesium.ScreenSpaceEventType.PINCH_START);
+
+      const tickListener = () => {
+        if (!pickedRef.current && !selectedIdRef.current) {
+          const idleTime = Date.now() - lastInteractionRef.current;
+          if (idleTime > 5000) {
+            viewer.camera.rotate(Cesium.Cartesian3.UNIT_Z, -0.0005);
+            viewer.scene.requestRender();
+          }
+        }
+      };
+      viewer.clock.onTick.addEventListener(tickListener);
+      clockRefCleanup = viewer.clock;
+      tickListenerCleanup = tickListener;
+
       setReady(true);
     }
 
@@ -135,6 +170,9 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
       handler?.destroy();
       canvas?.removeEventListener("webglcontextlost", onContextLost, false);
       window.removeEventListener("resize", onWindowResize);
+      if (clockRefCleanup && tickListenerCleanup) {
+         clockRefCleanup.onTick.removeEventListener(tickListenerCleanup);
+      }
     };
   }, [handleClick]);
 
@@ -247,7 +285,30 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
             />
           </Entity>
         )}
-      </Viewer>
+        {satelliteTrails &&
+        satelliteTrails.map((trail) => {
+          const positions = Cesium.Cartesian3.fromDegreesArray(
+            trail.points.flatMap((p) => [p.lon, p.lat])
+          );
+          return (
+            <Entity key={`trail-${trail.id}`}>
+              <PolylineGraphics
+                positions={positions}
+                width={trail.id === "iss" ? 2 : 1.5}
+                material={
+                  new Cesium.PolylineGlowMaterialProperty({
+                    glowPower: 0.1,
+                    taperPower: 0.5,
+                    color: Cesium.Color.fromCssColorString(
+                      trail.id === "iss" ? "#ff8a3d" : "#27e1c1"
+                    ).withAlpha(0.5),
+                  })
+                }
+              />
+            </Entity>
+          );
+        })}
+    </Viewer>
     </div>
   );
 }

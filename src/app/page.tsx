@@ -7,7 +7,12 @@ import TrackedList from "@/components/TrackedList";
 import TopBar from "@/components/TopBar";
 import type { PickedCoordinate } from "@/components/Globe";
 import { computeCelestialBodies, type SkyObject } from "@/lib/celestial";
-import { findOverheadSatellites, type SatellitePosition, type TleRecord } from "@/lib/satellites";
+import {
+  findOverheadSatellites,
+  type SatellitePosition,
+  type TleRecord,
+  getSatelliteTrail,
+} from "@/lib/satellites";
 
 // Cesium touches `window` at module load time — SSR must be disabled.
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
@@ -152,6 +157,26 @@ export default function Home() {
     [overheadSatellites]
   );
 
+  const satelliteTrails = useMemo(() => {
+    const trails: { id: string; points: { lat: number; lon: number }[] }[] = [];
+    if (!satCatalog || satCatalog.length === 0) return trails;
+
+    if (selectedId && selectedId.startsWith("sat-")) {
+      const noradId = Number(selectedId.replace("sat-", ""));
+      const omm = satCatalog.find((c) => Number(c.NORAD_CAT_ID) === noradId);
+      if (omm) {
+        trails.push({ id: selectedId, points: getSatelliteTrail(omm, now, 45, 45, 2) });
+      }
+    }
+
+    const issOmm = satCatalog.find((c) => Number(c.NORAD_CAT_ID) === 25544);
+    if (issOmm && selectedId !== "sat-25544") {
+      trails.push({ id: "iss", points: getSatelliteTrail(issOmm, now, 45, 45, 2) });
+    }
+
+    return trails;
+  }, [satCatalog, selectedId, now]);
+
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handlePick = useCallback((coord: PickedCoordinate) => {
     setPicked(coord);
@@ -235,6 +260,7 @@ export default function Home() {
           satelliteBlips={satelliteBlips}
           issPosition={issRaw}
           selectedId={selectedId}
+          satelliteTrails={satelliteTrails}
         />
 
         {/* ── Left sidebar ──────────────────────────────────────────────── */}

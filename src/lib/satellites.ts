@@ -88,6 +88,42 @@ export function propagateSatellite(
   };
 }
 
+export function getSatelliteTrail(
+  omm: TleRecord,
+  date: Date,
+  minutesBefore = 45,
+  minutesAfter = 45,
+  stepMinutes = 2
+): { lat: number; lon: number }[] {
+  let satrec;
+  try {
+    satrec = json2satrec(omm);
+  } catch {
+    return [];
+  }
+
+  const trail: { lat: number; lon: number }[] = [];
+  const startMs = date.getTime() - minutesBefore * 60 * 1000;
+  const endMs = date.getTime() + minutesAfter * 60 * 1000;
+  const stepMs = stepMinutes * 60 * 1000;
+
+  for (let t = startMs; t <= endMs; t += stepMs) {
+    const d = new Date(t);
+    const pv = propagate(satrec, d);
+    if (!pv || !pv.position) continue;
+    
+    const eci = pv.position;
+    const gmst = gstime(d);
+    const geo = eciToGeodetic(eci, gmst);
+    trail.push({
+      lat: degreesLat(geo.latitude),
+      lon: degreesLong(geo.longitude),
+    });
+  }
+
+  return trail;
+}
+
 export function findOverheadSatellites(
   catalog: TleRecord[],
   observerLat: number,
