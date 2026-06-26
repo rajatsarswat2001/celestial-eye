@@ -29,6 +29,10 @@ export default function Home() {
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [latInput, setLatInput] = useState("");
   const [lonInput, setLonInput] = useState("");
+  // Closed by default — on a phone the panel is full-width, so opening it
+  // automatically would block the whole globe before anyone asked for it.
+  // Desktop has room to spare, so it opens there once a position is picked.
+  const [panelOpen, setPanelOpen] = useState(false);
 
   const tickRef = useRef<number | undefined>(undefined);
 
@@ -139,6 +143,9 @@ export default function Home() {
     setSelectedId(null);
     setLatInput(coord.lat.toFixed(4));
     setLonInput(coord.lon.toFixed(4));
+    if (typeof window !== "undefined" && window.innerWidth >= 640) {
+      setPanelOpen(true);
+    }
   }, []);
 
   const handleManualSubmit = useCallback(
@@ -223,14 +230,37 @@ export default function Home() {
       )}
 
       {picked && (
-        <div className="pointer-events-auto absolute inset-y-0 right-0 z-10 w-full max-w-xs border-l border-panel-edge bg-panel/95 backdrop-blur-sm sm:w-80">
-          <TrackedList
-            objects={trackedObjects}
-            loading={loadingCatalog}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-          />
-        </div>
+        <>
+          {/* Slim reopen tab — only shown while the panel is closed, so
+              there's always a way to bring it back. The panel itself gets
+              its own close button (passed via onClose below), which is the
+              piece that was missing before: on a phone the old panel was
+              full-width and permanent, with no way to dismiss it and see
+              the globe underneath. */}
+          {!panelOpen && (
+            <button
+              onClick={() => setPanelOpen(true)}
+              aria-label="Show overhead list"
+              className="pointer-events-auto absolute right-0 top-1/2 z-20 -translate-y-1/2 rounded-l border border-r-0 border-panel-edge bg-panel/95 px-1.5 py-3 font-mono text-[10px] text-grey backdrop-blur-sm hover:text-cyan"
+            >
+              &lsaquo;
+            </button>
+          )}
+
+          <div
+            className={`pointer-events-auto absolute inset-y-0 right-0 z-10 w-full max-w-xs border-l border-panel-edge bg-panel/95 backdrop-blur-sm transition-transform duration-200 sm:w-80 ${
+              panelOpen ? "translate-x-0" : "translate-x-full"
+            }`}
+          >
+            <TrackedList
+              objects={trackedObjects}
+              loading={loadingCatalog}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onClose={() => setPanelOpen(false)}
+            />
+          </div>
+        </>
       )}
     </main>
   );
