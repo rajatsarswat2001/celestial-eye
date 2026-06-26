@@ -177,14 +177,31 @@ export default function CelestialEyeDashboard() {
   }, [satCatalog, now]);
 
   const filtered = useMemo(() => {
-    return sidebarData.filter((s) => {
+    const list = sidebarData.filter((s) => {
       if (!s) return false;
       const catMatch = category === "ALL" || s.category === category;
       const q = search.toLowerCase();
       const nameMatch = s.name.toLowerCase().includes(q) || s.noradId.toString().includes(q);
       return catMatch && nameMatch;
-    }).slice(0, 150); // Limit rendered list to prevent lag
-  }, [sidebarData, category, search]);
+    });
+
+    if (picked) {
+      list.sort((a, b) => {
+        if (!a || !b) return 0;
+        let dLnga = Math.abs(a.lng - picked.lon);
+        if (dLnga > 180) dLnga = 360 - dLnga;
+        const da = Math.pow(a.lat - picked.lat, 2) + Math.pow(dLnga, 2);
+
+        let dLngb = Math.abs(b.lng - picked.lon);
+        if (dLngb > 180) dLngb = 360 - dLngb;
+        const db = Math.pow(b.lat - picked.lat, 2) + Math.pow(dLngb, 2);
+
+        return da - db;
+      });
+    }
+
+    return list.slice(0, 150); // Limit rendered list to prevent lag
+  }, [sidebarData, category, search, picked]);
 
   const selectedTelemetry = useMemo(() => {
     if (!selectedId) return null;
