@@ -24,11 +24,11 @@ const CATEGORIES = ["ALL", "STATION", "STARLINK", "WEATHER", "DEBRIS", "ROCKET B
 
 // ─── ORBITAL ROW COMPONENT ───────────────────────────────────────────────────
 function OrbRow({ label, val, accent }: { label: string; val: string; accent?: string }) {
+  const accentClass = accent === "blue" ? "text-blue-400" : accent === "purple" ? "text-purple-400" : "text-slate-400";
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "7px" }}>
-      <span style={{ fontSize: "9px", color: "#6B8CAE", letterSpacing: "0.3px" }}>{label}</span>
-      <span style={{ fontSize: "11px", fontFamily: "'JetBrains Mono', monospace", fontWeight: "500",
-        color: accent === "blue" ? "#60A5FA" : accent === "purple" ? "#A78BFA" : "#94A3B8" }}>
+    <div className="flex justify-between items-center mb-[7px]">
+      <span className="text-[9px] text-[#6B8CAE] tracking-[0.3px]">{label}</span>
+      <span className={`text-[11px] font-mono font-medium ${accentClass}`}>
         {val}
       </span>
     </div>
@@ -36,15 +36,13 @@ function OrbRow({ label, val, accent }: { label: string; val: string; accent?: s
 }
 
 // ─── TINY HELPERS ─────────────────────────────────────────────────────────────
-function Stat({ dot, label, icon, value, valueStyle }: any) {
+function Stat({ dot, label, icon, value, valueClass }: any) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-      {dot && <span style={{ width: "6px", height: "6px", borderRadius: "50%",
-        background: dot, animation: dot === "#10B981" ? "pulse 2.5s infinite" : "none" }} />}
+    <div className="flex items-center gap-[6px] hidden sm:flex">
+      {dot && <span className={`w-[6px] h-[6px] rounded-full bg-[${dot}] ${dot === "#10B981" ? "animate-pulse" : ""}`} />}
       {icon}
-      {value && <span style={{ ...valueStyle, color: "#E2E8F0" }}>{value}</span>}
-      <span style={{ fontSize: "10px", color: "#6B8CAE", fontFamily: "'JetBrains Mono', monospace",
-        letterSpacing: "0.5px" }}>{label}</span>
+      {value && <span className={`text-slate-200 ${valueClass || ""}`}>{value}</span>}
+      <span className="text-[10px] text-[#6B8CAE] font-mono tracking-[0.5px]">{label}</span>
     </div>
   );
 }
@@ -60,6 +58,10 @@ export default function CelestialEyeDashboard() {
   const [search, setSearch] = useState("");
   const [globeMode, setGlobeMode] = useState("3D GLOBE");
   const [utc, setUtc] = useState("");
+  
+  // Mobile UI States
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
 
   const tickRef = useRef<number | undefined>(undefined);
 
@@ -212,145 +214,124 @@ export default function CelestialEyeDashboard() {
   const handlePick = useCallback((coord: PickedCoordinate) => {
     setPicked(coord);
     setSelectedId(null);
+    setIsLeftPanelOpen(false); // Auto close sidebar on mobile when picking
     const url = new URL(window.location.href);
     url.searchParams.set("lat", coord.lat.toFixed(5));
     url.searchParams.set("lon", coord.lon.toFixed(5));
     window.history.pushState({}, "", url.toString());
   }, []);
 
-  // ─── STYLES ───────────────────────────────────────────────────────────────
-  const S = {
-    root: { fontFamily: "'Inter', sans-serif", background: "#060C16", color: "#E2E8F0",
-      height: "100vh", display: "flex", flexDirection: "column" as const, overflow: "hidden" },
-    topBar: { background: "#0B1628", borderBottom: "1px solid #1A2744", padding: "0 18px",
-      height: "50px", display: "flex", alignItems: "center", justifyContent: "space-between",
-      flexShrink: 0, zIndex: 10 },
-    logoText: { fontFamily: "'Orbitron', sans-serif", fontWeight: 700, fontSize: "13px",
-      letterSpacing: "3.5px", color: "#E2E8F0" },
-    main: { flex: 1, display: "flex", overflow: "hidden" },
-    sidebar: { width: "230px", background: "#0B1628", borderRight: "1px solid #1A2744",
-      display: "flex", flexDirection: "column" as const, flexShrink: 0 },
-    sectionLabel: { fontSize: "8px", color: "#6B8CAE", letterSpacing: "2px",
-      fontFamily: "'Orbitron', sans-serif" },
-    globe: { flex: 1, display: "flex", flexDirection: "column" as const, background: "#060C16",
-      position: "relative" as const, overflow: "hidden" },
-    rightPanel: { width: "255px", background: "#0B1628", borderLeft: "1px solid #1A2744",
-      display: "flex", flexDirection: "column" as const, flexShrink: 0, overflowY: "auto" as const },
-    ticker: { height: "26px", background: "#0B1628", borderTop: "1px solid #1A2744",
-      overflow: "hidden", display: "flex", alignItems: "center", flexShrink: 0 },
-    panel: { padding: "13px", borderBottom: "1px solid #1A2744" },
-  };
-
   return (
-    <div style={S.root}>
+    <div className="font-sans bg-[#060C16] text-slate-200 h-screen flex flex-col overflow-hidden">
       <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
         @keyframes ticker { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
         ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-track{background:#0D1526}
         ::-webkit-scrollbar-thumb{background:#1A2744;border-radius:2px}
         input::placeholder{color:#4A6080} input:focus{outline:none}
-        button{cursor:pointer}
       `}</style>
 
       {/* ── TOP BAR ─────────────────────────────────────────────────── */}
-      <header style={S.topBar}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div style={{ width: "26px", height: "26px", borderRadius: "50%",
-            border: "2px solid #3B82F6", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ width: "7px", height: "7px", borderRadius: "50%",
-              background: "#3B82F6", animation: "pulse 2.4s ease-in-out infinite" }} />
+      <header className="bg-[#0B1628] border-b border-[#1A2744] px-3 md:px-5 h-[50px] flex items-center justify-between shrink-0 z-20 relative">
+        <div className="flex items-center gap-2 md:gap-3">
+          {/* Mobile hamburger to toggle catalog */}
+          <button className="md:hidden text-blue-400 p-1" onClick={() => { setIsLeftPanelOpen(!isLeftPanelOpen); setIsRightPanelOpen(false); }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+          </button>
+          
+          <div className="w-[20px] h-[20px] md:w-[26px] md:h-[26px] rounded-full border-2 border-blue-500 flex items-center justify-center hidden sm:flex">
+            <div className="w-[5px] h-[5px] md:w-[7px] md:h-[7px] rounded-full bg-blue-500 animate-pulse" />
           </div>
-          <span style={S.logoText}>CELESTIAL EYE</span>
-          <span style={{ background: "#162340", color: "#60A5FA", fontSize: "9px",
-            fontFamily: "'Orbitron', sans-serif", padding: "2px 6px", borderRadius: "3px",
-            letterSpacing: "1px", border: "1px solid #1E3A5F" }}>v3.0</span>
+          <span className="font-['Orbitron'] font-bold text-[11px] md:text-[13px] tracking-[2px] md:tracking-[3.5px] text-slate-200">CELESTIAL EYE</span>
+          <span className="bg-[#162340] text-blue-400 text-[8px] md:text-[9px] font-['Orbitron'] px-1.5 py-0.5 rounded-[3px] tracking-[1px] border border-[#1E3A5F]">v3.0</span>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", background: "#0D1526",
-          border: "1px solid #1A2744", borderRadius: "6px", padding: "6px 12px",
-          gap: "8px", width: "270px" }}>
+        <div className="hidden md:flex items-center bg-[#0D1526] border border-[#1A2744] rounded-[6px] px-3 py-1.5 gap-2 w-[270px]">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6B8CAE" strokeWidth="2.5">
             <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
           </svg>
           <input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Name or NORAD ID…"
-            style={{ background: "none", border: "none", color: "#E2E8F0",
-              fontSize: "11px", width: "100%", fontFamily: "'Inter', sans-serif" }} />
+            className="bg-transparent border-none text-slate-200 text-[11px] w-full font-sans" />
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "22px" }}>
+        <div className="flex items-center gap-3 md:gap-5">
           <Stat dot="#10B981" label="TRACKING" value={overheadSatellites.length} />
           <Stat
             icon={<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6B8CAE" strokeWidth="2">
               <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
             </svg>}
             value={utc} label="UTC"
-            valueStyle={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", fontWeight: "600" }}
+            valueClass="font-mono text-[11px] md:text-[12px] font-semibold"
           />
-          <Stat dot="#3B82F6" label={`${satCatalog.length} OBJECTS`} dotColor="#3B82F6" />
+          {/* Mobile telemetry toggle button */}
+          {selectedId && (
+            <button className="md:hidden text-blue-400 p-1 bg-blue-900/30 rounded" onClick={() => { setIsRightPanelOpen(!isRightPanelOpen); setIsLeftPanelOpen(false); }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+            </button>
+          )}
         </div>
       </header>
 
       {/* ── MAIN ────────────────────────────────────────────────────── */}
-      <div style={S.main}>
+      <div className="flex-1 flex overflow-hidden relative">
 
-        {/* ── SIDEBAR ─────────────────────────────────────────────── */}
-        <aside style={S.sidebar}>
-          <div style={{ padding: "12px", borderBottom: "1px solid #1A2744" }}>
-            <div style={{ ...S.sectionLabel, marginBottom: "9px" }}>CATALOG FILTER</div>
+        {/* ── LEFT SIDEBAR (CATALOG) ────────────────────────────────── */}
+        <aside className={`
+          absolute md:relative z-10 h-full w-[250px] md:w-[230px] bg-[#0B1628] border-r border-[#1A2744]
+          flex flex-col shrink-0 transition-transform duration-300 ease-in-out
+          ${isLeftPanelOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+        `}>
+          <div className="md:hidden p-3 border-b border-[#1A2744]">
+            <div className="flex items-center bg-[#0D1526] border border-[#1A2744] rounded-[6px] px-3 py-1.5 gap-2 w-full">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6B8CAE" strokeWidth="2.5">
+                <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+              </svg>
+              <input value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="Name or NORAD ID…"
+                className="bg-transparent border-none text-slate-200 text-[11px] w-full font-sans" />
+            </div>
+          </div>
+          <div className="p-3 border-b border-[#1A2744]">
+            <div className="text-[8px] text-[#6B8CAE] tracking-[2px] font-['Orbitron'] mb-[9px]">CATALOG FILTER</div>
             {CATEGORIES.map((cat) => {
               const active = category === cat;
               const count = cat === "ALL" ? satCatalog.length : sidebarData.filter(s => s && s.category === cat).length;
               return (
-                <button key={cat} onClick={() => setCategory(cat)} style={{
-                  width: "100%", background: active ? "rgba(59,130,246,0.1)" : "none",
-                  border: "none", borderLeft: `2px solid ${active ? "#3B82F6" : "transparent"}`,
-                  color: active ? "#60A5FA" : "#6B8CAE",
-                  padding: "5px 8px", fontSize: "10px", fontFamily: "'JetBrains Mono', monospace",
-                  letterSpacing: "0.5px", textAlign: "left", borderRadius: "0 3px 3px 0",
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  marginBottom: "2px",
-                }}>
+                <button key={cat} onClick={() => setCategory(cat)} className={`
+                  w-full px-2 py-1.5 text-[10px] font-mono tracking-[0.5px] text-left rounded-r-[3px]
+                  flex justify-between items-center mb-0.5 border-l-2
+                  ${active ? "bg-blue-500/10 border-blue-500 text-blue-400" : "bg-transparent border-transparent text-[#6B8CAE]"}
+                `}>
                   <span>{cat}</span>
-                  <span style={{ fontSize: "9px", color: active ? "#3B82F6" : "#4A6080" }}>{count}</span>
+                  <span className={`text-[9px] ${active ? "text-blue-500" : "text-[#4A6080]"}`}>{count}</span>
                 </button>
               );
             })}
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            <div style={{ padding: "10px 12px 5px", ...S.sectionLabel }}>
+          <div className="flex-1 overflow-y-auto">
+            <div className="px-3 pt-2.5 pb-1 text-[8px] text-[#6B8CAE] tracking-[2px] font-['Orbitron']">
               OBJECTS ({filtered.length})
             </div>
             {filtered.map((sat) => {
               if (!sat) return null;
               const isActive = selectedId === sat.id;
               const isOverhead = overheadSatellites.some(o => o.id === sat.id);
-              const dotColor = isOverhead ? "#10B981" : "#F59E0B";
+              const dotColor = isOverhead ? "bg-emerald-500" : "bg-amber-500";
               return (
-                <button key={sat.id} onClick={() => setSelectedId(sat.id)} style={{
-                  width: "100%", background: isActive ? "rgba(59,130,246,0.07)" : "none",
-                  border: "none", borderLeft: `2px solid ${isActive ? "#3B82F6" : "transparent"}`,
-                  padding: "8px 12px", textAlign: "left",
-                  display: "flex", flexDirection: "column", gap: "3px",
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: "11px", fontWeight: "500",
-                      color: isActive ? "#E2E8F0" : "#8BA7C7",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "160px" }}>
+                <button key={sat.id} onClick={() => { setSelectedId(sat.id); setIsRightPanelOpen(true); setIsLeftPanelOpen(false); }} className={`
+                  w-full px-3 py-2 text-left flex flex-col gap-[3px] border-l-2
+                  ${isActive ? "bg-blue-500/10 border-blue-500" : "bg-transparent border-transparent"}
+                `}>
+                  <div className="flex justify-between items-center w-full">
+                    <span className={`text-[11px] font-medium truncate max-w-[150px] md:max-w-[160px] ${isActive ? "text-slate-200" : "text-[#8BA7C7]"}`}>
                       {sat.name}
                     </span>
-                    <span style={{ width: "6px", height: "6px", borderRadius: "50%",
-                      background: dotColor, flexShrink: 0,
-                      animation: isOverhead ? "pulse 2.5s ease-in-out infinite" : "none" }} />
+                    <span className={`w-[6px] h-[6px] rounded-full shrink-0 ${dotColor} ${isOverhead ? "animate-pulse" : ""}`} />
                   </div>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <span style={{ fontSize: "9px", color: "#4A6080", fontFamily: "'JetBrains Mono', monospace" }}>
-                      #{sat.noradId}
-                    </span>
-                    <span style={{ fontSize: "9px", fontFamily: "'JetBrains Mono', monospace",
-                      color: "#3B82F6" }}>
+                  <div className="flex gap-2">
+                    <span className="text-[9px] text-[#4A6080] font-mono">#{sat.noradId}</span>
+                    <span className="text-[9px] font-mono text-blue-500">
                       {sat.alt >= 1000 ? `${(sat.alt / 1000).toFixed(1)}Mm` : `${sat.alt.toFixed(0)}km`}
                     </span>
                   </div>
@@ -361,41 +342,43 @@ export default function CelestialEyeDashboard() {
         </aside>
 
         {/* ── GLOBE AREA ──────────────────────────────────────────── */}
-        <main style={S.globe}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "7px 16px", borderBottom: "1px solid #1A2744",
-            background: "rgba(11,22,40,0.7)", backdropFilter: "blur(4px)", zIndex: 2 }}>
-            <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
-              <span style={{ ...S.sectionLabel }}>ORBITAL VISUALIZATION</span>
-              <span style={{ fontSize: "9px", color: "#3B82F6", fontFamily: "'JetBrains Mono', monospace" }}>
+        <main className="flex-1 flex flex-col bg-[#060C16] relative overflow-hidden w-full">
+          {/* Overlay to close sidebar on mobile when tapping globe */}
+          {(isLeftPanelOpen || isRightPanelOpen) && (
+            <div 
+              className="absolute inset-0 bg-[#060C16]/60 backdrop-blur-sm z-0 md:hidden"
+              onClick={() => { setIsLeftPanelOpen(false); setIsRightPanelOpen(false); }}
+            />
+          )}
+          
+          <div className="flex justify-between items-center px-4 py-[7px] border-b border-[#1A2744] bg-[#0B1628]/70 backdrop-blur-[4px] z-[2]">
+            <div className="flex gap-4 items-center">
+              <span className="text-[8px] text-[#6B8CAE] tracking-[2px] font-['Orbitron'] hidden sm:inline-block">ORBITAL VISUALIZATION</span>
+              <span className="text-[9px] text-blue-500 font-mono">
                 ECI FRAME · REAL-TIME
               </span>
             </div>
-            <div style={{ display: "flex", gap: "6px" }}>
+            <div className="flex gap-1.5">
               {["2D RADAR", "3D GLOBE"].map((mode) => (
-                <button key={mode} onClick={() => setGlobeMode(mode)} style={{
-                  background: globeMode === mode ? "#1A3060" : "none",
-                  border: `1px solid ${globeMode === mode ? "#3B82F6" : "#1A2744"}`,
-                  color: globeMode === mode ? "#60A5FA" : "#6B8CAE",
-                  fontSize: "8px", padding: "3px 9px", borderRadius: "3px",
-                  fontFamily: "'Orbitron', sans-serif", letterSpacing: "1px",
-                }}>
+                <button key={mode} onClick={() => setGlobeMode(mode)} className={`
+                  text-[8px] px-2 py-1 rounded-[3px] font-['Orbitron'] tracking-[1px] border
+                  ${globeMode === mode ? "bg-[#1A3060] border-blue-500 text-blue-400" : "bg-transparent border-[#1A2744] text-[#6B8CAE]"}
+                `}>
                   {mode}
                 </button>
               ))}
             </div>
           </div>
 
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-            padding: globeMode === "2D RADAR" ? "16px" : "0", position: "relative",
-            background: globeMode === "2D RADAR" ? "radial-gradient(ellipse at center, #0D1A30 0%, #060C16 70%)" : "#000" }}>
+          <div className={`flex-1 flex items-center justify-center relative ${globeMode === "2D RADAR" ? "p-4" : "p-0"}`} 
+               style={{ background: globeMode === "2D RADAR" ? "radial-gradient(ellipse at center, #0D1A30 0%, #060C16 70%)" : "#000" }}>
             
             {globeMode === "2D RADAR" ? (
-              <div style={{ position: "relative", width: "min(440px, 90%)", height: "min(440px, 90%)", zIndex: 1 }}>
+              <div className="relative w-full max-w-[440px] aspect-square z-[1]">
                 <RadarGlobe satellites={radarSatellites} selectedId={selectedId} />
               </div>
             ) : (
-              <div style={{ position: "absolute", inset: 0, zIndex: 1 }}>
+              <div className="absolute inset-0 z-[1] touch-none">
                 <Globe
                   onPick={handlePick}
                   picked={picked}
@@ -407,59 +390,64 @@ export default function CelestialEyeDashboard() {
                 
                 {/* Instruction overlay for empty state */}
                 {!picked && (
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-center">
-                    <div className="px-4 py-2 rounded border border-blue-500/30 bg-blue-500/10 backdrop-blur-md">
-                      <p className="font-mono text-xs text-blue-400">Click anywhere on the globe to set observer position</p>
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-center px-4 w-full">
+                    <div className="inline-block px-4 py-2 rounded border border-blue-500/30 bg-blue-500/10 backdrop-blur-md">
+                      <p className="font-mono text-[10px] sm:text-xs text-blue-400">Tap anywhere on the globe to set observer position</p>
                     </div>
                   </div>
                 )}
               </div>
             )}
 
-            {/* HUD corners */}
-            {selectedTelemetry && [
-              { pos: { top: "14px", left: "14px" },  label: "ALT", val: `${selectedTelemetry.alt.toFixed(1)} km` },
-              { pos: { top: "14px", right: "14px" }, label: "VEL", val: `${selectedTelemetry.vel.toFixed(3)} km/s` },
-              { pos: { bottom: "14px", left: "14px" }, label: "LAT", val: `${selectedTelemetry.lat.toFixed(4)}°` },
-              { pos: { bottom: "14px", right: "14px" }, label: "LNG", val: `${selectedTelemetry.lng.toFixed(4)}°` },
-            ].map((h, i) => (
-              <div key={i} style={{ position: "absolute", ...h.pos, background: "rgba(8,16,32,0.85)",
-                border: "1px solid #1A2744", borderRadius: "4px", padding: "6px 10px", zIndex: 2 }}>
-                <div style={{ fontSize: "7px", color: "#6B8CAE", letterSpacing: "2px",
-                  fontFamily: "'Orbitron', sans-serif", marginBottom: "2px" }}>{h.label}</div>
-                <div style={{ fontSize: "13px", color: "#60A5FA",
-                  fontFamily: "'JetBrains Mono', monospace", fontWeight: "500" }}>{h.val}</div>
-              </div>
-            ))}
+            {/* HUD corners - hide on mobile when panels are open */}
+            <div className={`${isLeftPanelOpen || isRightPanelOpen ? "hidden md:block" : "block"}`}>
+              {selectedTelemetry && [
+                { pos: "top-3.5 left-3.5",  label: "ALT", val: `${selectedTelemetry.alt.toFixed(1)} km` },
+                { pos: "top-3.5 right-3.5", label: "VEL", val: `${selectedTelemetry.vel.toFixed(3)} km/s` },
+                { pos: "bottom-3.5 left-3.5", label: "LAT", val: `${selectedTelemetry.lat.toFixed(4)}°` },
+                { pos: "bottom-3.5 right-3.5", label: "LNG", val: `${selectedTelemetry.lng.toFixed(4)}°` },
+              ].map((h, i) => (
+                <div key={i} className={`absolute ${h.pos} bg-[#081020]/85 border border-[#1A2744] rounded px-2.5 py-1.5 z-[2]`}>
+                  <div className="text-[7px] text-[#6B8CAE] tracking-[2px] font-['Orbitron'] mb-0.5">{h.label}</div>
+                  <div className="text-[11px] sm:text-[13px] text-blue-400 font-mono font-medium">{h.val}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </main>
 
         {/* ── RIGHT TELEMETRY PANEL ────────────────────────────────── */}
-        <aside style={S.rightPanel}>
+        <aside className={`
+          absolute right-0 md:relative z-10 h-full w-[260px] md:w-[255px] bg-[#0B1628] border-l border-[#1A2744]
+          flex flex-col shrink-0 overflow-y-auto transition-transform duration-300 ease-in-out
+          ${isRightPanelOpen ? "translate-x-0" : "translate-x-full md:translate-x-0"}
+        `}>
+          <div className="md:hidden flex items-center justify-between p-3 border-b border-[#1A2744]">
+            <span className="text-[10px] text-[#6B8CAE] tracking-[2px] font-['Orbitron']">TELEMETRY</span>
+            <button className="text-slate-400 p-1" onClick={() => setIsRightPanelOpen(false)}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          
           {selectedTelemetry ? (
-            <div style={{ animation: "fadeIn 0.2s ease" }} key={selectedTelemetry.id}>
-              <div style={S.panel}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                  <span style={{
-                    fontSize: "8px", fontFamily: "'Orbitron', sans-serif", letterSpacing: "1px",
-                    color: "#10B981", background: "rgba(16,185,129,0.1)",
-                    border: "1px solid rgba(16,185,129,0.25)",
-                    padding: "2px 7px", borderRadius: "2px",
-                  }}>● TRACKING</span>
-                  <span style={{ fontSize: "9px", color: "#6B8CAE",
-                    fontFamily: "'JetBrains Mono', monospace" }}>#{selectedTelemetry.noradId}</span>
+            <div className="animate-[fadeIn_0.2s_ease]" key={selectedTelemetry.id}>
+              <div className="p-3 border-b border-[#1A2744]">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[8px] font-['Orbitron'] tracking-[1px] text-emerald-500 bg-emerald-500/10 border border-emerald-500/25 px-1.5 py-0.5 rounded-[2px]">
+                    ● TRACKING
+                  </span>
+                  <span className="text-[9px] text-[#6B8CAE] font-mono">#{selectedTelemetry.noradId}</span>
                 </div>
-                <div style={{ fontFamily: "'Orbitron', sans-serif", fontWeight: 700,
-                  fontSize: "12px", color: "#E2E8F0", letterSpacing: "1px", marginBottom: "6px" }}>
+                <div className="font-['Orbitron'] font-bold text-[12px] text-slate-200 tracking-[1px] mb-1.5 break-words leading-tight">
                   {selectedTelemetry.name}
                 </div>
-                <span style={{ fontSize: "9px", color: "#6B8CAE", background: "#0D1526",
-                  padding: "2px 7px", borderRadius: "2px", fontFamily: "'JetBrains Mono', monospace",
-                  letterSpacing: "0.5px" }}>{selectedTelemetry.category}</span>
+                <span className="text-[9px] text-[#6B8CAE] bg-[#0D1526] px-1.5 py-0.5 rounded-[2px] font-mono tracking-[0.5px]">
+                  {selectedTelemetry.category}
+                </span>
               </div>
 
-              <div style={S.panel}>
-                <div style={{ ...S.sectionLabel, marginBottom: "10px" }}>ORBITAL ELEMENTS</div>
+              <div className="p-3 border-b border-[#1A2744]">
+                <div className="text-[8px] text-[#6B8CAE] tracking-[2px] font-['Orbitron'] mb-2.5">ORBITAL ELEMENTS</div>
                 <OrbRow label="Altitude" val={`${selectedTelemetry.alt.toFixed(1)} km`} accent="blue" />
                 <OrbRow label="Velocity" val={`${selectedTelemetry.vel.toFixed(3)} km/s`} accent="blue" />
                 <OrbRow label="Inclination" val={`${selectedTelemetry.inc.toFixed(2)}°`} />
@@ -469,8 +457,8 @@ export default function CelestialEyeDashboard() {
                 <OrbRow label="Arg of Perigee" val={`${selectedTelemetry.aop.toFixed(1)}°`} />
               </div>
 
-              <div style={S.panel}>
-                <div style={{ ...S.sectionLabel, marginBottom: "10px" }}>GROUND TRACK</div>
+              <div className="p-3 border-b border-[#1A2744]">
+                <div className="text-[8px] text-[#6B8CAE] tracking-[2px] font-['Orbitron'] mb-2.5">GROUND TRACK</div>
                 <OrbRow label="Latitude"
                   val={`${Math.abs(selectedTelemetry.lat).toFixed(4)}° ${selectedTelemetry.lat >= 0 ? "N" : "S"}`}
                   accent="purple" />
@@ -480,34 +468,31 @@ export default function CelestialEyeDashboard() {
               </div>
             </div>
           ) : (
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-              color: "#4A6080", fontSize: "11px" }}>
-              Select a satellite
+            <div className="flex-1 flex items-center justify-center text-[#4A6080] text-[11px] p-6 text-center">
+              Select a satellite from the catalog or globe to view telemetry
             </div>
           )}
         </aside>
       </div>
 
       {/* ── BOTTOM TICKER ───────────────────────────────────────────── */}
-      <footer style={S.ticker}>
-        <div style={{ background: "#162340", padding: "0 12px", height: "100%",
-          display: "flex", alignItems: "center", flexShrink: 0,
-          borderRight: "1px solid #1A2744" }}>
-          <span style={{ fontSize: "8px", color: "#3B82F6",
-            fontFamily: "'Orbitron', sans-serif", letterSpacing: "2px" }}>LIVE</span>
+      <footer className="h-[26px] bg-[#0B1628] border-t border-[#1A2744] overflow-hidden flex items-center shrink-0">
+        <div className="bg-[#162340] px-2 md:px-3 h-full flex items-center shrink-0 border-r border-[#1A2744] z-10 relative">
+          <span className="text-[8px] text-blue-500 font-['Orbitron'] tracking-[2px]">LIVE</span>
         </div>
-        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-          <div style={{ animation: "ticker 35s linear infinite",
-            display: "flex", gap: "44px", whiteSpace: "nowrap", alignItems: "center", height: "26px" }}>
+        <div className="flex-1 overflow-hidden relative">
+          <div className="flex gap-[44px] whitespace-nowrap items-center h-[26px] animate-[ticker_35s_linear_infinite]">
             {[...overheadSatellites.slice(0, 15), ...overheadSatellites.slice(0, 15)].map((sat, i) => (
-              <span key={i} style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace",
-                color: "#6B8CAE", display: "inline-flex", gap: "8px", alignItems: "center" }}>
-                <span style={{ color: "#3B82F6" }}>{sat.name}</span>
-                <span>ALT <span style={{ color: "#CBD5E1" }}>{sat.altitudeKm.toFixed(0)}km</span></span>
-                <span>VEL <span style={{ color: "#CBD5E1" }}>{sat.velocityKmS.toFixed(2)}km/s</span></span>
-                <span style={{ color: "#10B981", animation: "pulse 2.5s infinite" }}>●</span>
+              <span key={i} className="text-[10px] font-mono text-[#6B8CAE] inline-flex gap-2 items-center">
+                <span className="text-blue-500">{sat.name}</span>
+                <span>ALT <span className="text-slate-300">{sat.altitudeKm.toFixed(0)}km</span></span>
+                <span>VEL <span className="text-slate-300">{sat.velocityKmS.toFixed(2)}km/s</span></span>
+                <span className="text-emerald-500 animate-pulse">●</span>
               </span>
             ))}
+            {overheadSatellites.length === 0 && (
+              <span className="text-[10px] font-mono text-[#6B8CAE] px-4">Scanning for active objects overhead...</span>
+            )}
           </div>
         </div>
       </footer>

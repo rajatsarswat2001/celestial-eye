@@ -27,7 +27,14 @@ if (typeof window !== "undefined") {
   Cesium.Ion.defaultAccessToken = "";
 }
 
-// Let Cesium use its default imagery base layer
+// Define a free, high-res realistic satellite imagery base layer (Esri World Imagery)
+const earthImageryLayer = new Cesium.ImageryLayer(
+  new Cesium.UrlTemplateImageryProvider({
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    maximumLevel: 19,
+    credit: "Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
+  })
+);
 
 const webglContextOptions: Cesium.ContextOptions = {
   webgl: {
@@ -199,6 +206,7 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
         fullscreenButton={false}
         geocoder={false}
         infoBox={false}
+        baseLayer={earthImageryLayer}
         contextOptions={webglContextOptions}
         requestRenderMode
         maximumRenderTimeChange={Infinity}
