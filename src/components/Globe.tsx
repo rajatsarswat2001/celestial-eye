@@ -127,6 +127,17 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0b1220");
       viewer.scene.fog.enabled = false;
 
+      // Cesium's raw default camera position is an awkward tight zoom, not
+      // a clean full-Earth view — frame the whole globe explicitly. Roughly
+      // 4x Earth's radius gives margin on every side without the planet
+      // looking tiny. requestRenderMode is on, so we follow up with an
+      // explicit render or this would otherwise sit un-rendered until the
+      // next state change triggers one.
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(0, 10, 25_000_000),
+      });
+      viewer.scene.requestRender();
+
       canvas = viewer.scene.canvas;
       canvas.addEventListener("webglcontextlost", onContextLost, false);
 
