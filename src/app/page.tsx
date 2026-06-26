@@ -2,9 +2,6 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import RadarSweep, { type RadarBlip } from "@/components/RadarSweep";
-import TrackedList from "@/components/TrackedList";
-import TopBar from "@/components/TopBar";
 import type { PickedCoordinate } from "@/components/Globe";
 import { computeCelestialBodies, type SkyObject } from "@/lib/celestial";
 import {
@@ -12,7 +9,9 @@ import {
   type SatellitePosition,
   type TleRecord,
   getSatelliteTrail,
+  getSatelliteTelemetry,
 } from "@/lib/satellites";
+import RadarGlobe, { type RadarSat } from "@/components/RadarGlobe";
 
 // Cesium touches `window` at module load time — SSR must be disabled.
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
@@ -21,22 +20,46 @@ const TICK_MS = 2000;
 const SATELLITE_REFRESH_MS = 2 * 60 * 60 * 1000;
 const ISS_REFRESH_MS = 5000;
 
-function zenithFraction(altitudeDeg: number): number {
-  return Math.max(0, Math.min(1, altitudeDeg / 90));
+const CATEGORIES = ["ALL", "STATION", "STARLINK", "WEATHER", "DEBRIS", "ROCKET BODY", "SATELLITE"];
+
+// ─── ORBITAL ROW COMPONENT ───────────────────────────────────────────────────
+function OrbRow({ label, val, accent }: { label: string; val: string; accent?: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "7px" }}>
+      <span style={{ fontSize: "9px", color: "#6B8CAE", letterSpacing: "0.3px" }}>{label}</span>
+      <span style={{ fontSize: "11px", fontFamily: "'JetBrains Mono', monospace", fontWeight: "500",
+        color: accent === "blue" ? "#60A5FA" : accent === "purple" ? "#A78BFA" : "#94A3B8" }}>
+        {val}
+      </span>
+    </div>
+  );
 }
 
-export default function Home() {
+// ─── TINY HELPERS ─────────────────────────────────────────────────────────────
+function Stat({ dot, label, icon, value, valueStyle }: any) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      {dot && <span style={{ width: "6px", height: "6px", borderRadius: "50%",
+        background: dot, animation: dot === "#10B981" ? "pulse 2.5s infinite" : "none" }} />}
+      {icon}
+      {value && <span style={{ ...valueStyle, color: "#E2E8F0" }}>{value}</span>}
+      <span style={{ fontSize: "10px", color: "#6B8CAE", fontFamily: "'JetBrains Mono', monospace",
+        letterSpacing: "0.5px" }}>{label}</span>
+    </div>
+  );
+}
+
+// ─── MAIN DASHBOARD ──────────────────────────────────────────────────────────
+export default function CelestialEyeDashboard() {
   const [picked, setPicked] = useState<PickedCoordinate | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [satCatalog, setSatCatalog] = useState<TleRecord[]>([]);
   const [issRaw, setIssRaw] = useState<{ lat: number; lon: number } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loadingCatalog, setLoadingCatalog] = useState(true);
-  const [latInput, setLatInput] = useState("");
-  const [lonInput, setLonInput] = useState("");
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [shareLabel, setShareLabel] = useState<"copy" | "copied">("copy");
-  const [geoError, setGeoError] = useState<string | null>(null);
+  const [category, setCategory] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [globeMode, setGlobeMode] = useState("3D GLOBE");
+  const [utc, setUtc] = useState("");
 
   const tickRef = useRef<number | undefined>(undefined);
 
@@ -44,6 +67,18 @@ export default function Home() {
   useEffect(() => {
     tickRef.current = window.setInterval(() => setNow(new Date()), TICK_MS);
     return () => window.clearInterval(tickRef.current);
+  }, []);
+
+  // Live UTC clock
+  useEffect(() => {
+    const tick = () => {
+      const n = new Date();
+      const pad = (x: number) => String(x).padStart(2, "0");
+      setUtc(`${pad(n.getUTCHours())}:${pad(n.getUTCMinutes())}:${pad(n.getUTCSeconds())}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
   }, []);
 
   // ── URL state: read on mount ─────────────────────────────────────────────
@@ -56,16 +91,12 @@ export default function Home() {
       Math.abs(lat) <= 90 && Math.abs(lon) <= 180
     ) {
       setPicked({ lat, lon });
-      setLatInput(lat.toFixed(4));
-      setLonInput(lon.toFixed(4));
-      setPanelOpen(true);
     }
   }, []);
 
   // ── Satellite catalog ────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
-
     async function loadCatalog() {
       try {
         const res = await fetch("/api/satellites");
@@ -73,13 +104,8 @@ export default function Home() {
         if (!cancelled && Array.isArray(data.satellites)) {
           setSatCatalog(data.satellites);
         }
-      } catch {
-        // keep existing catalog on network hiccup
-      } finally {
-        if (!cancelled) setLoadingCatalog(false);
-      }
+      } catch {}
     }
-
     loadCatalog();
     const interval = window.setInterval(loadCatalog, SATELLITE_REFRESH_MS);
     return () => {
@@ -91,7 +117,6 @@ export default function Home() {
   // ── ISS position ─────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
-
     async function loadIss() {
       try {
         const res = await fetch("/api/iss");
@@ -99,11 +124,8 @@ export default function Home() {
         if (!cancelled && typeof data.lat === "number") {
           setIssRaw({ lat: data.lat, lon: data.lon });
         }
-      } catch {
-        // keep last known position
-      }
+      } catch {}
     }
-
     loadIss();
     const interval = window.setInterval(loadIss, ISS_REFRESH_MS);
     return () => {
@@ -113,38 +135,10 @@ export default function Home() {
   }, []);
 
   // ── Derived data ─────────────────────────────────────────────────────────
-  const celestialBodies: SkyObject[] = useMemo(() => {
-    if (!picked) return [];
-    return computeCelestialBodies(picked.lat, picked.lon, now);
-  }, [picked, now]);
-
   const overheadSatellites: SatellitePosition[] = useMemo(() => {
     if (!picked || satCatalog.length === 0) return [];
     return findOverheadSatellites(satCatalog, picked.lat, picked.lon, now, 0);
   }, [picked, satCatalog, now]);
-
-  const trackedObjects = useMemo(() => {
-    const combined = [...celestialBodies, ...overheadSatellites.slice(0, 60)];
-    combined.sort((a, b) => a.zenithAngleDeg - b.zenithAngleDeg);
-    return combined;
-  }, [celestialBodies, overheadSatellites]);
-
-  const radarBlips: RadarBlip[] = useMemo(() => {
-    return trackedObjects
-      .filter((o) => o.altitudeDeg > 0)
-      .map((o) => ({
-        id: o.id,
-        azimuthDeg: o.azimuthDeg,
-        elevationFrac: zenithFraction(o.altitudeDeg),
-        color:
-          o.kind === "iss"     ? "#ff8a3d"
-          : o.kind === "sun"   ? "#ffd76a"
-          : o.kind === "moon"  ? "#e8ecf1"
-          : o.kind === "planet"? "#27e1c1"
-          : "#3d5a7a",
-        pulse: o.id === selectedId,
-      }));
-  }, [trackedObjects, selectedId]);
 
   const satelliteBlips = useMemo(
     () =>
@@ -177,252 +171,346 @@ export default function Home() {
     return trails;
   }, [satCatalog, selectedId, now]);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
+  // Telemetry for the full catalog mapped cleanly for the sidebar
+  const sidebarData = useMemo(() => {
+    return satCatalog.map(omm => getSatelliteTelemetry(omm, now)).filter(Boolean) as ReturnType<typeof getSatelliteTelemetry>[];
+  }, [satCatalog, now]);
+
+  const filtered = useMemo(() => {
+    return sidebarData.filter((s) => {
+      if (!s) return false;
+      const catMatch = category === "ALL" || s.category === category;
+      const q = search.toLowerCase();
+      const nameMatch = s.name.toLowerCase().includes(q) || s.noradId.toString().includes(q);
+      return catMatch && nameMatch;
+    }).slice(0, 150); // Limit rendered list to prevent lag
+  }, [sidebarData, category, search]);
+
+  const selectedTelemetry = useMemo(() => {
+    if (!selectedId) return null;
+    const noradId = Number(selectedId.replace("sat-", ""));
+    const omm = satCatalog.find(c => Number(c.NORAD_CAT_ID) === noradId);
+    if (!omm) return null;
+    return getSatelliteTelemetry(omm, now);
+  }, [selectedId, satCatalog, now]);
+
+  // Map to RadarGlobe props
+  const radarSatellites: RadarSat[] = useMemo(() => {
+    return overheadSatellites.map(s => {
+      const omm = satCatalog.find(c => `sat-${c.NORAD_CAT_ID}` === s.id);
+      return {
+        id: s.id,
+        name: s.name,
+        lat: s.subLat,
+        lng: s.subLon,
+        inc: omm ? Number(omm.INCLINATION) : 0,
+        status: "TRACKING"
+      };
+    });
+  }, [overheadSatellites, satCatalog]);
+
   const handlePick = useCallback((coord: PickedCoordinate) => {
     setPicked(coord);
     setSelectedId(null);
-    setLatInput(coord.lat.toFixed(4));
-    setLonInput(coord.lon.toFixed(4));
-    setGeoError(null);
-    // Push to URL for shareability
     const url = new URL(window.location.href);
     url.searchParams.set("lat", coord.lat.toFixed(5));
     url.searchParams.set("lon", coord.lon.toFixed(5));
-    window.history.replaceState(null, "", url.toString());
-    // Open panel on desktop
-    if (window.innerWidth >= 640) setPanelOpen(true);
+    window.history.pushState({}, "", url.toString());
   }, []);
 
-  const handleManualSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      const lat = Number(latInput);
-      const lon = Number(lonInput);
-      if (
-        Number.isFinite(lat) && Number.isFinite(lon) &&
-        Math.abs(lat) <= 90 && Math.abs(lon) <= 180
-      ) {
-        handlePick({ lat, lon });
-      }
-    },
-    [latInput, lonInput, handlePick]
-  );
+  // ─── STYLES ───────────────────────────────────────────────────────────────
+  const S = {
+    root: { fontFamily: "'Inter', sans-serif", background: "#060C16", color: "#E2E8F0",
+      height: "100vh", display: "flex", flexDirection: "column" as const, overflow: "hidden" },
+    topBar: { background: "#0B1628", borderBottom: "1px solid #1A2744", padding: "0 18px",
+      height: "50px", display: "flex", alignItems: "center", justifyContent: "space-between",
+      flexShrink: 0, zIndex: 10 },
+    logoText: { fontFamily: "'Orbitron', sans-serif", fontWeight: 700, fontSize: "13px",
+      letterSpacing: "3.5px", color: "#E2E8F0" },
+    main: { flex: 1, display: "flex", overflow: "hidden" },
+    sidebar: { width: "230px", background: "#0B1628", borderRight: "1px solid #1A2744",
+      display: "flex", flexDirection: "column" as const, flexShrink: 0 },
+    sectionLabel: { fontSize: "8px", color: "#6B8CAE", letterSpacing: "2px",
+      fontFamily: "'Orbitron', sans-serif" },
+    globe: { flex: 1, display: "flex", flexDirection: "column" as const, background: "#060C16",
+      position: "relative" as const, overflow: "hidden" },
+    rightPanel: { width: "255px", background: "#0B1628", borderLeft: "1px solid #1A2744",
+      display: "flex", flexDirection: "column" as const, flexShrink: 0, overflowY: "auto" as const },
+    ticker: { height: "26px", background: "#0B1628", borderTop: "1px solid #1A2744",
+      overflow: "hidden", display: "flex", alignItems: "center", flexShrink: 0 },
+    panel: { padding: "13px", borderBottom: "1px solid #1A2744" },
+  };
 
-  const handleGeolocate = useCallback(() => {
-    if (!navigator.geolocation) {
-      setGeoError("Geolocation not supported by this browser.");
-      return;
-    }
-    setGeoError(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        handlePick({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-      },
-      () => {
-        setGeoError("Location access denied. Enter coordinates manually.");
-      },
-      { timeout: 8000 }
-    );
-  }, [handlePick]);
-
-  const handleShare = useCallback(() => {
-    const url = picked
-      ? (() => {
-          const u = new URL(window.location.href);
-          u.searchParams.set("lat", picked.lat.toFixed(5));
-          u.searchParams.set("lon", picked.lon.toFixed(5));
-          return u.toString();
-        })()
-      : window.location.href;
-
-    navigator.clipboard.writeText(url).then(() => {
-      setShareLabel("copied");
-      setTimeout(() => setShareLabel("copy"), 2000);
-    });
-  }, [picked]);
-
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-void-deep">
-      {/* Top bar */}
-      <TopBar
-        onGeolocate={handleGeolocate}
-        onShare={handleShare}
-        shareLabel={shareLabel}
-      />
+    <div style={S.root}>
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+        @keyframes ticker { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+        ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-track{background:#0D1526}
+        ::-webkit-scrollbar-thumb{background:#1A2744;border-radius:2px}
+        input::placeholder{color:#4A6080} input:focus{outline:none}
+        button{cursor:pointer}
+      `}</style>
 
-      {/* Main content below topbar */}
-      <div className="relative flex flex-1 overflow-hidden">
-        {/* Globe — full bleed behind everything */}
-        <Globe
-          onPick={handlePick}
-          picked={picked}
-          satelliteBlips={satelliteBlips}
-          issPosition={issRaw}
-          selectedId={selectedId}
-          satelliteTrails={satelliteTrails}
-        />
+      {/* ── TOP BAR ─────────────────────────────────────────────────── */}
+      <header style={S.topBar}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ width: "26px", height: "26px", borderRadius: "50%",
+            border: "2px solid #3B82F6", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: "7px", height: "7px", borderRadius: "50%",
+              background: "#3B82F6", animation: "pulse 2.4s ease-in-out infinite" }} />
+          </div>
+          <span style={S.logoText}>CELESTIAL EYE</span>
+          <span style={{ background: "#162340", color: "#60A5FA", fontSize: "9px",
+            fontFamily: "'Orbitron', sans-serif", padding: "2px 6px", borderRadius: "3px",
+            letterSpacing: "1px", border: "1px solid #1E3A5F" }}>v3.0</span>
+        </div>
 
-        {/* ── Left sidebar ──────────────────────────────────────────────── */}
-        <aside className="glass-sidebar animate-sidebar-in pointer-events-auto relative z-20 hidden w-72 shrink-0 flex-col sm:flex">
-          {/* Observer position section */}
-          <div className="border-b border-panel-edge/50 px-4 py-4">
-            <div className="mb-3 flex items-center gap-2">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#27e1c1" strokeWidth="1.4" opacity="0.7">
-                <circle cx="6" cy="6" r="2.5" />
-                <path d="M6 1v1.5M6 9.5V11M1 6h1.5M9.5 6H11" />
-              </svg>
-              <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-grey">
-                Observer Position
-              </span>
-            </div>
+        <div style={{ display: "flex", alignItems: "center", background: "#0D1526",
+          border: "1px solid #1A2744", borderRadius: "6px", padding: "6px 12px",
+          gap: "8px", width: "270px" }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6B8CAE" strokeWidth="2.5">
+            <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+          </svg>
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Name or NORAD ID…"
+            style={{ background: "none", border: "none", color: "#E2E8F0",
+              fontSize: "11px", width: "100%", fontFamily: "'Inter', sans-serif" }} />
+        </div>
 
-            <form onSubmit={handleManualSubmit} className="flex flex-col gap-2">
-              <div className="flex gap-2">
-                <div className="flex flex-1 flex-col gap-0.5">
-                  <label className="font-mono text-[8px] uppercase tracking-wider text-grey opacity-60">
-                    Latitude
-                  </label>
-                  <input
-                    value={latInput}
-                    onChange={(e) => setLatInput(e.target.value)}
-                    placeholder="0.0000"
-                    inputMode="decimal"
-                    className="glass-input tabular w-full rounded-sm px-2 py-1.5 font-mono text-[12px] text-ink placeholder:text-grey/40"
-                  />
-                </div>
-                <div className="flex flex-1 flex-col gap-0.5">
-                  <label className="font-mono text-[8px] uppercase tracking-wider text-grey opacity-60">
-                    Longitude
-                  </label>
-                  <input
-                    value={lonInput}
-                    onChange={(e) => setLonInput(e.target.value)}
-                    placeholder="0.0000"
-                    inputMode="decimal"
-                    className="glass-input tabular w-full rounded-sm px-2 py-1.5 font-mono text-[12px] text-ink placeholder:text-grey/40"
-                  />
-                </div>
-              </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "22px" }}>
+          <Stat dot="#10B981" label="TRACKING" value={overheadSatellites.length} />
+          <Stat
+            icon={<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6B8CAE" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>}
+            value={utc} label="UTC"
+            valueStyle={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", fontWeight: "600" }}
+          />
+          <Stat dot="#3B82F6" label={`${satCatalog.length} OBJECTS`} dotColor="#3B82F6" />
+        </div>
+      </header>
 
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  className="flex-1 rounded bg-cyan/10 py-1.5 font-mono text-[10px] uppercase tracking-wider text-cyan transition-colors hover:bg-cyan hover:text-void-deep"
-                >
-                  Lock Position
+      {/* ── MAIN ────────────────────────────────────────────────────── */}
+      <div style={S.main}>
+
+        {/* ── SIDEBAR ─────────────────────────────────────────────── */}
+        <aside style={S.sidebar}>
+          <div style={{ padding: "12px", borderBottom: "1px solid #1A2744" }}>
+            <div style={{ ...S.sectionLabel, marginBottom: "9px" }}>CATALOG FILTER</div>
+            {CATEGORIES.map((cat) => {
+              const active = category === cat;
+              const count = cat === "ALL" ? satCatalog.length : sidebarData.filter(s => s && s.category === cat).length;
+              return (
+                <button key={cat} onClick={() => setCategory(cat)} style={{
+                  width: "100%", background: active ? "rgba(59,130,246,0.1)" : "none",
+                  border: "none", borderLeft: `2px solid ${active ? "#3B82F6" : "transparent"}`,
+                  color: active ? "#60A5FA" : "#6B8CAE",
+                  padding: "5px 8px", fontSize: "10px", fontFamily: "'JetBrains Mono', monospace",
+                  letterSpacing: "0.5px", textAlign: "left", borderRadius: "0 3px 3px 0",
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  marginBottom: "2px",
+                }}>
+                  <span>{cat}</span>
+                  <span style={{ fontSize: "9px", color: active ? "#3B82F6" : "#4A6080" }}>{count}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={handleGeolocate}
-                  className="flex items-center gap-1.5 rounded bg-white/5 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-ink-dim transition-colors hover:bg-white/10 hover:text-ink"
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4">
-                    <circle cx="5" cy="5" r="2" />
-                    <path d="M5 0v1.5M5 8.5V10M0 5h1.5M8.5 5H10" />
-                  </svg>
-                  Locate
-                </button>
-              </div>
-            </form>
-
-            {geoError && (
-              <p className="mt-2 font-mono text-[9px] text-amber animate-fade-in">{geoError}</p>
-            )}
-
-            {picked && (
-              <p className="mt-2 font-mono text-[9px] text-grey animate-fade-in">
-                <span className="tabular text-ink-dim">{picked.lat.toFixed(4)}°N</span>
-                {" / "}
-                <span className="tabular text-ink-dim">{picked.lon.toFixed(4)}°E</span>
-              </p>
-            )}
+              );
+            })}
           </div>
 
-          {/* Overhead list */}
-          {picked ? (
-            <div className="flex flex-1 flex-col overflow-hidden">
-              <TrackedList
-                objects={trackedObjects}
-                loading={loadingCatalog}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                onClose={() => {}}
-              />
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <div style={{ padding: "10px 12px 5px", ...S.sectionLabel }}>
+              OBJECTS ({filtered.length})
+            </div>
+            {filtered.map((sat) => {
+              if (!sat) return null;
+              const isActive = selectedId === sat.id;
+              const isOverhead = overheadSatellites.some(o => o.id === sat.id);
+              const dotColor = isOverhead ? "#10B981" : "#F59E0B";
+              return (
+                <button key={sat.id} onClick={() => setSelectedId(sat.id)} style={{
+                  width: "100%", background: isActive ? "rgba(59,130,246,0.07)" : "none",
+                  border: "none", borderLeft: `2px solid ${isActive ? "#3B82F6" : "transparent"}`,
+                  padding: "8px 12px", textAlign: "left",
+                  display: "flex", flexDirection: "column", gap: "3px",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: "11px", fontWeight: "500",
+                      color: isActive ? "#E2E8F0" : "#8BA7C7",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "160px" }}>
+                      {sat.name}
+                    </span>
+                    <span style={{ width: "6px", height: "6px", borderRadius: "50%",
+                      background: dotColor, flexShrink: 0,
+                      animation: isOverhead ? "pulse 2.5s ease-in-out infinite" : "none" }} />
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <span style={{ fontSize: "9px", color: "#4A6080", fontFamily: "'JetBrains Mono', monospace" }}>
+                      #{sat.noradId}
+                    </span>
+                    <span style={{ fontSize: "9px", fontFamily: "'JetBrains Mono', monospace",
+                      color: "#3B82F6" }}>
+                      {sat.alt >= 1000 ? `${(sat.alt / 1000).toFixed(1)}Mm` : `${sat.alt.toFixed(0)}km`}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        {/* ── GLOBE AREA ──────────────────────────────────────────── */}
+        <main style={S.globe}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "7px 16px", borderBottom: "1px solid #1A2744",
+            background: "rgba(11,22,40,0.7)", backdropFilter: "blur(4px)", zIndex: 2 }}>
+            <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+              <span style={{ ...S.sectionLabel }}>ORBITAL VISUALIZATION</span>
+              <span style={{ fontSize: "9px", color: "#3B82F6", fontFamily: "'JetBrains Mono', monospace" }}>
+                ECI FRAME · REAL-TIME
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: "6px" }}>
+              {["2D RADAR", "3D GLOBE"].map((mode) => (
+                <button key={mode} onClick={() => setGlobeMode(mode)} style={{
+                  background: globeMode === mode ? "#1A3060" : "none",
+                  border: `1px solid ${globeMode === mode ? "#3B82F6" : "#1A2744"}`,
+                  color: globeMode === mode ? "#60A5FA" : "#6B8CAE",
+                  fontSize: "8px", padding: "3px 9px", borderRadius: "3px",
+                  fontFamily: "'Orbitron', sans-serif", letterSpacing: "1px",
+                }}>
+                  {mode}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+            padding: globeMode === "2D RADAR" ? "16px" : "0", position: "relative",
+            background: globeMode === "2D RADAR" ? "radial-gradient(ellipse at center, #0D1A30 0%, #060C16 70%)" : "#000" }}>
+            
+            {globeMode === "2D RADAR" ? (
+              <div style={{ position: "relative", width: "min(440px, 90%)", height: "min(440px, 90%)", zIndex: 1 }}>
+                <RadarGlobe satellites={radarSatellites} selectedId={selectedId} />
+              </div>
+            ) : (
+              <div style={{ position: "absolute", inset: 0, zIndex: 1 }}>
+                <Globe
+                  onPick={handlePick}
+                  picked={picked}
+                  satelliteBlips={satelliteBlips}
+                  issPosition={issRaw}
+                  selectedId={selectedId}
+                  satelliteTrails={satelliteTrails}
+                />
+                
+                {/* Instruction overlay for empty state */}
+                {!picked && (
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none text-center">
+                    <div className="px-4 py-2 rounded border border-blue-500/30 bg-blue-500/10 backdrop-blur-md">
+                      <p className="font-mono text-xs text-blue-400">Click anywhere on the globe to set observer position</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* HUD corners */}
+            {selectedTelemetry && [
+              { pos: { top: "14px", left: "14px" },  label: "ALT", val: `${selectedTelemetry.alt.toFixed(1)} km` },
+              { pos: { top: "14px", right: "14px" }, label: "VEL", val: `${selectedTelemetry.vel.toFixed(3)} km/s` },
+              { pos: { bottom: "14px", left: "14px" }, label: "LAT", val: `${selectedTelemetry.lat.toFixed(4)}°` },
+              { pos: { bottom: "14px", right: "14px" }, label: "LNG", val: `${selectedTelemetry.lng.toFixed(4)}°` },
+            ].map((h, i) => (
+              <div key={i} style={{ position: "absolute", ...h.pos, background: "rgba(8,16,32,0.85)",
+                border: "1px solid #1A2744", borderRadius: "4px", padding: "6px 10px", zIndex: 2 }}>
+                <div style={{ fontSize: "7px", color: "#6B8CAE", letterSpacing: "2px",
+                  fontFamily: "'Orbitron', sans-serif", marginBottom: "2px" }}>{h.label}</div>
+                <div style={{ fontSize: "13px", color: "#60A5FA",
+                  fontFamily: "'JetBrains Mono', monospace", fontWeight: "500" }}>{h.val}</div>
+              </div>
+            ))}
+          </div>
+        </main>
+
+        {/* ── RIGHT TELEMETRY PANEL ────────────────────────────────── */}
+        <aside style={S.rightPanel}>
+          {selectedTelemetry ? (
+            <div style={{ animation: "fadeIn 0.2s ease" }} key={selectedTelemetry.id}>
+              <div style={S.panel}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <span style={{
+                    fontSize: "8px", fontFamily: "'Orbitron', sans-serif", letterSpacing: "1px",
+                    color: "#10B981", background: "rgba(16,185,129,0.1)",
+                    border: "1px solid rgba(16,185,129,0.25)",
+                    padding: "2px 7px", borderRadius: "2px",
+                  }}>● TRACKING</span>
+                  <span style={{ fontSize: "9px", color: "#6B8CAE",
+                    fontFamily: "'JetBrains Mono', monospace" }}>#{selectedTelemetry.noradId}</span>
+                </div>
+                <div style={{ fontFamily: "'Orbitron', sans-serif", fontWeight: 700,
+                  fontSize: "12px", color: "#E2E8F0", letterSpacing: "1px", marginBottom: "6px" }}>
+                  {selectedTelemetry.name}
+                </div>
+                <span style={{ fontSize: "9px", color: "#6B8CAE", background: "#0D1526",
+                  padding: "2px 7px", borderRadius: "2px", fontFamily: "'JetBrains Mono', monospace",
+                  letterSpacing: "0.5px" }}>{selectedTelemetry.category}</span>
+              </div>
+
+              <div style={S.panel}>
+                <div style={{ ...S.sectionLabel, marginBottom: "10px" }}>ORBITAL ELEMENTS</div>
+                <OrbRow label="Altitude" val={`${selectedTelemetry.alt.toFixed(1)} km`} accent="blue" />
+                <OrbRow label="Velocity" val={`${selectedTelemetry.vel.toFixed(3)} km/s`} accent="blue" />
+                <OrbRow label="Inclination" val={`${selectedTelemetry.inc.toFixed(2)}°`} />
+                <OrbRow label="Period" val={`${selectedTelemetry.period.toFixed(2)} min`} />
+                <OrbRow label="Eccentricity" val={selectedTelemetry.ecc.toFixed(7)} />
+                <OrbRow label="RAAN" val={`${selectedTelemetry.raan.toFixed(1)}°`} />
+                <OrbRow label="Arg of Perigee" val={`${selectedTelemetry.aop.toFixed(1)}°`} />
+              </div>
+
+              <div style={S.panel}>
+                <div style={{ ...S.sectionLabel, marginBottom: "10px" }}>GROUND TRACK</div>
+                <OrbRow label="Latitude"
+                  val={`${Math.abs(selectedTelemetry.lat).toFixed(4)}° ${selectedTelemetry.lat >= 0 ? "N" : "S"}`}
+                  accent="purple" />
+                <OrbRow label="Longitude"
+                  val={`${Math.abs(selectedTelemetry.lng).toFixed(4)}° ${selectedTelemetry.lng >= 0 ? "E" : "W"}`}
+                  accent="purple" />
+              </div>
             </div>
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-8 text-center">
-              {/* Animated globe hint */}
-              <div className="relative">
-                <div className="h-16 w-16 rounded-full border border-cyan/15 flex items-center justify-center">
-                  <div className="h-10 w-10 rounded-full border border-cyan/25 animate-[radar-spin_8s_linear_infinite] border-dashed" />
-                </div>
-                <div className="absolute inset-0 rounded-full" style={{ boxShadow: "0 0 24px rgba(39,225,193,0.08)" }} />
-              </div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-grey">
-                Click globe to begin
-              </p>
-              <p className="font-sans text-[11px] text-grey/60 leading-relaxed">
-                Select any point on Earth to discover what&apos;s overhead — satellites, the ISS, planets, and more.
-              </p>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+              color: "#4A6080", fontSize: "11px" }}>
+              Select a satellite
             </div>
           )}
         </aside>
-
-        {/* Mobile panel toggle — shown only when sidebar is not visible (< sm) */}
-        {picked && !panelOpen && (
-          <button
-            onClick={() => setPanelOpen(true)}
-            aria-label="Show overhead list"
-            className="pointer-events-auto absolute right-0 top-1/2 z-20 -translate-y-1/2 rounded-l border border-r-0 border-panel-edge/60 bg-panel/90 px-1.5 py-3 font-mono text-[10px] text-grey backdrop-blur-sm hover:text-cyan sm:hidden"
-          >
-            ‹
-          </button>
-        )}
-
-        {/* Mobile overlay panel (small screens only) */}
-        {panelOpen && (
-          <div className="pointer-events-auto absolute inset-y-0 right-0 z-30 w-full max-w-xs sm:hidden">
-            <div className="glass-sidebar flex h-full flex-col border-l border-panel-edge/60">
-              <div className="flex items-center justify-between border-b border-panel-edge/50 px-4 py-3">
-                <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-grey">Overhead Now</span>
-                <button
-                  onClick={() => setPanelOpen(false)}
-                  className="flex h-6 w-6 items-center justify-center rounded text-grey hover:text-cyan"
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.6" fill="none">
-                    <path d="M1 1l8 8M9 1L1 9" />
-                  </svg>
-                </button>
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <TrackedList
-                  objects={trackedObjects}
-                  loading={loadingCatalog}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  onClose={() => setPanelOpen(false)}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Radar widget — bottom-right ───────────────────────────────── */}
-        {picked && (
-          <div className="pointer-events-none absolute bottom-5 right-5 z-10 animate-fade-in">
-            <div className="glass-card rounded-lg p-3">
-              <RadarSweep blips={radarBlips} size={180} />
-              <div className="mt-2 flex items-center justify-between font-mono text-[9px] text-grey">
-                <span className="tabular text-ink-dim">
-                  {picked.lat.toFixed(2)}°, {picked.lon.toFixed(2)}°
-                </span>
-                <span className="tabular">{now.toUTCString().slice(17, 25)} UTC</span>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* ── BOTTOM TICKER ───────────────────────────────────────────── */}
+      <footer style={S.ticker}>
+        <div style={{ background: "#162340", padding: "0 12px", height: "100%",
+          display: "flex", alignItems: "center", flexShrink: 0,
+          borderRight: "1px solid #1A2744" }}>
+          <span style={{ fontSize: "8px", color: "#3B82F6",
+            fontFamily: "'Orbitron', sans-serif", letterSpacing: "2px" }}>LIVE</span>
+        </div>
+        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+          <div style={{ animation: "ticker 35s linear infinite",
+            display: "flex", gap: "44px", whiteSpace: "nowrap", alignItems: "center", height: "26px" }}>
+            {[...overheadSatellites.slice(0, 15), ...overheadSatellites.slice(0, 15)].map((sat, i) => (
+              <span key={i} style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace",
+                color: "#6B8CAE", display: "inline-flex", gap: "8px", alignItems: "center" }}>
+                <span style={{ color: "#3B82F6" }}>{sat.name}</span>
+                <span>ALT <span style={{ color: "#CBD5E1" }}>{sat.altitudeKm.toFixed(0)}km</span></span>
+                <span>VEL <span style={{ color: "#CBD5E1" }}>{sat.velocityKmS.toFixed(2)}km/s</span></span>
+                <span style={{ color: "#10B981", animation: "pulse 2.5s infinite" }}>●</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -27,18 +27,7 @@ if (typeof window !== "undefined") {
   Cesium.Ion.defaultAccessToken = "";
 }
 
-// CARTO Dark Matter — free, no API key, OSM-derived.
-const darkMatterLayer = new Cesium.ImageryLayer(
-  new Cesium.UrlTemplateImageryProvider({
-    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    subdomains: ["a", "b", "c", "d"],
-    maximumLevel: 19,
-    credit: new Cesium.Credit(
-      '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>',
-      true
-    ),
-  })
-);
+// Let Cesium use its default imagery base layer
 
 const webglContextOptions: Cesium.ContextOptions = {
   webgl: {
@@ -112,12 +101,7 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
       }
       const activeViewer: Cesium.Viewer = viewer;
 
-      viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020408");
-      if (viewer.scene.skyAtmosphere) {
-        viewer.scene.skyAtmosphere.show = false;
-      }
-      viewer.scene.globe.showGroundAtmosphere = false;
-      viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0a0f1a");
+      // Removed custom dark background colors to allow SkyBox and default atmosphere to render
       viewer.scene.fog.enabled = false;
       viewer.scene.globe.enableLighting = true;
       viewer.clock.shouldAnimate = true;
@@ -215,9 +199,6 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
         fullscreenButton={false}
         geocoder={false}
         infoBox={false}
-        selectionIndicator={false}
-        baseLayer={darkMatterLayer}
-        skyBox={false}
         contextOptions={webglContextOptions}
         requestRenderMode
         maximumRenderTimeChange={Infinity}

@@ -31,6 +31,23 @@ export interface SatellitePosition extends SkyObject {
   subLat: number;
   subLon: number;
   altitudeKm: number;
+  velocityKmS: number;
+}
+
+export interface SatelliteTelemetry {
+  id: string;
+  name: string;
+  noradId: number;
+  category: string;
+  lat: number;
+  lng: number;
+  alt: number;
+  vel: number;
+  inc: number;
+  period: number;
+  ecc: number;
+  raan: number;
+  aop: number;
 }
 
 const ISS_NORAD_ID = 25544;
@@ -49,11 +66,12 @@ export function propagateSatellite(
   }
 
   const pv = propagate(satrec, date);
-  if (!pv || !pv.position) return null;
+  if (!pv || !pv.position || !pv.velocity) return null;
 
   const noradId = Number(omm.NORAD_CAT_ID);
   const gmst = gstime(date);
   const eci = pv.position;
+  const velocity = pv.velocity;
   const geo = eciToGeodetic(eci, gmst);
 
   const subLat = degreesLat(geo.latitude);
@@ -85,6 +103,7 @@ export function propagateSatellite(
     subLat,
     subLon,
     altitudeKm,
+    velocityKmS: Math.sqrt((velocity as any).x ** 2 + (velocity as any).y ** 2 + (velocity as any).z ** 2),
   };
 }
 
@@ -114,7 +133,7 @@ export function getSatelliteTrail(
     
     const eci = pv.position;
     const gmst = gstime(d);
-    const geo = eciToGeodetic(eci, gmst);
+    const geo = eciToGeodetic(eci as any, gmst);
     trail.push({
       lat: degreesLat(geo.latitude),
       lon: degreesLong(geo.longitude),
@@ -122,6 +141,48 @@ export function getSatelliteTrail(
   }
 
   return trail;
+}
+
+export function getSatelliteTelemetry(omm: TleRecord, date: Date): SatelliteTelemetry | null {
+  let satrec;
+  try {
+    satrec = json2satrec(omm);
+  } catch {
+    return null;
+  }
+
+  const pv = propagate(satrec, date);
+  if (!pv || !pv.position || !pv.velocity) return null;
+
+  const gmst = gstime(date);
+  const position = pv.position as any;
+  const velocity = pv.velocity as any;
+  const geo = eciToGeodetic(position, gmst);
+
+  const meanMotion = Number(omm.MEAN_MOTION);
+  const period = meanMotion > 0 ? (24 * 60) / meanMotion : 0;
+
+  let category = "SATELLITE";
+  if (omm.OBJECT_TYPE === "DEBRIS") category = "DEBRIS";
+  if (omm.OBJECT_TYPE === "ROCKET BODY") category = "ROCKET BODY";
+  if (Number(omm.NORAD_CAT_ID) === ISS_NORAD_ID) category = "STATION";
+  if (String(omm.OBJECT_NAME).includes("STARLINK")) category = "STARLINK";
+
+  return {
+    id: `sat-${omm.NORAD_CAT_ID}`,
+    name: String(omm.OBJECT_NAME),
+    noradId: Number(omm.NORAD_CAT_ID),
+    category,
+    lat: degreesLat(geo.latitude),
+    lng: degreesLong(geo.longitude),
+    alt: geo.height,
+    vel: Math.sqrt(velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2),
+    inc: Number(omm.INCLINATION),
+    period,
+    ecc: Number(omm.ECCENTRICITY),
+    raan: Number(omm.RA_OF_ASC_NODE),
+    aop: Number(omm.ARG_OF_PERICENTER),
+  };
 }
 
 export function findOverheadSatellites(
