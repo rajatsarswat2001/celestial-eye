@@ -238,7 +238,7 @@ export default function Home() {
         />
 
         {/* ── Left sidebar ──────────────────────────────────────────────── */}
-        <aside className="glass-sidebar animate-sidebar-in pointer-events-auto relative z-20 flex w-72 shrink-0 flex-col sm:w-72">
+        <aside className="glass-sidebar animate-sidebar-in pointer-events-auto relative z-20 hidden w-72 shrink-0 flex-col sm:flex">
           {/* Observer position section */}
           <div className="border-b border-panel-edge/50 px-4 py-4">
             <div className="mb-3 flex items-center gap-2">
