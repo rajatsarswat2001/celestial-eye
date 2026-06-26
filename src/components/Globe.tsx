@@ -15,24 +15,17 @@ interface GlobeProps {
   /** Sub-points of tracked satellites, rendered as small blips on the globe surface. */
   satelliteBlips?: { id: string; lat: number; lon: number; isIss: boolean }[];
   issPosition?: { lat: number; lon: number } | null;
+  /** ID of the currently selected satellite — gets a halo on the globe */
+  selectedId?: string | null;
 }
 
 // Cesium needs to know where to load its workers/assets from at runtime.
-// We copy node_modules/cesium/Build/Cesium into public/cesium during setup
-// (see README) so this can stay a plain static path.
 if (typeof window !== "undefined") {
   (window as unknown as { CESIUM_BASE_URL: string }).CESIUM_BASE_URL = "/cesium/";
-  // We deliberately avoid Cesium ion (imagery/terrain streaming, geocoding):
-  // it requires a personal access token and counts against a free-tier
-  // request quota. Clearing the default token avoids the "using Cesium's
-  // default ion access token" console warning — our base layer below is
-  // CARTO's free, keyless Dark Matter tile set instead.
   Cesium.Ion.defaultAccessToken = "";
 }
 
-// CARTO Dark Matter — free, no API key, OSM-derived. Requires the standard
-// attribution credit, which we keep visible (restyled, not hidden) in
-// globals.css to stay compliant with CARTO/OSM terms.
+// CARTO Dark Matter — free, no API key, OSM-derived.
 const darkMatterLayer = new Cesium.ImageryLayer(
   new Cesium.UrlTemplateImageryProvider({
     url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
@@ -45,12 +38,6 @@ const darkMatterLayer = new Cesium.ImageryLayer(
   })
 );
 
-// Tuned for mobile robustness: failIfMajorPerformanceCaveat=false lets
-// devices that would otherwise refuse a WebGL context (older/weaker mobile
-// GPUs, or a GPU temporarily under memory pressure from other tabs) fall
-// back to a lower-tier context instead of failing outright. antialias=false
-// and powerPreference="default" reduce the memory/GPU footprint, which is
-// the main lever against context loss on phones.
 const webglContextOptions: Cesium.ContextOptions = {
   webgl: {
     alpha: false,
@@ -62,7 +49,7 @@ const webglContextOptions: Cesium.ContextOptions = {
   allowTextureFilterAnisotropic: false,
 };
 
-export default function Globe({ onPick, picked, satelliteBlips, issPosition }: GlobeProps) {
+export default function Globe({ onPick, picked, satelliteBlips, issPosition, selectedId }: GlobeProps) {
   const viewerRef = useRef<{ cesiumElement?: Cesium.Viewer }>(null);
   const [ready, setReady] = useState(false);
   const [contextLost, setContextLost] = useState(false);
@@ -92,12 +79,6 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
     let cancelled = false;
 
     function onContextLost(e: Event) {
-      // WebGL contexts get reclaimed by the OS/browser under memory
-      // pressure — common on phones, especially with several tabs open.
-      // The default behavior with no listener is for the whole page to
-      // hard-crash on mobile Chrome ("This page couldn't load"). Calling
-      // preventDefault keeps the page alive long enough to show a real
-      // recovery message instead of dying silently.
       e.preventDefault();
       setContextLost(true);
     }
@@ -110,12 +91,6 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
     }
     window.addEventListener("resize", onWindowResize);
 
-    // resium constructs the underlying Cesium.Viewer inside its own
-    // mount-time effects, which normally finish before this parent effect
-    // runs (child effects commit before parent effects on the same mount).
-    // We still guard with a short poll rather than assuming that ordering
-    // holds across every resium/React version, since a silent no-op here
-    // (click handler never attached) would be a hard-to-notice bug.
     function trySetup() {
       const viewer = viewerRef.current?.cesiumElement;
       if (!viewer || viewer.isDestroyed()) {
@@ -124,28 +99,14 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
       }
       const activeViewer: Cesium.Viewer = viewer;
 
-      // Void-black backdrop instead of Cesium's default blue sky — this is
-      // an instrument console, not a tourist globe. We skip skyBox (depends
-      // on Ion-hosted cube map textures we're deliberately not using) and
-      // let the scene background carry it instead.
-      viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#05080d");
+      viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020408");
       if (viewer.scene.skyAtmosphere) {
         viewer.scene.skyAtmosphere.show = false;
       }
       viewer.scene.globe.showGroundAtmosphere = false;
-      viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0b1220");
+      viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0a0f1a");
       viewer.scene.fog.enabled = false;
 
-      // Cesium sizes its internal canvas/frustum based on the container's
-      // actual laid-out dimensions at the moment it reads them. If that
-      // happens before the browser has finished laying out our absolutely
-      // positioned full-screen container (a real risk on first paint), the
-      // camera ends up framed for a near-zero-size viewport — which shows
-      // up exactly as "globe rendered tiny in a corner," not a crash, since
-      // everything else still works. We force an explicit resize and
-      // re-apply the camera view across a few animation frames, after
-      // layout has definitely settled, rather than trusting Cesium's own
-      // initial measurement timing on the very first frame.
       function frameGlobe() {
         if (activeViewer.isDestroyed()) return;
         activeViewer.resize();
@@ -177,27 +138,23 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
     };
   }, [handleClick]);
 
-  // requestRenderMode means Cesium won't auto-redraw when our React-driven
-  // entity props change (new satellite positions, picked point, etc.) — we
-  // have to explicitly ask for a render each time those change.
   useEffect(() => {
     viewerRef.current?.cesiumElement?.scene.requestRender();
-  }, [picked, satelliteBlips, issPosition, ready]);
+  }, [picked, satelliteBlips, issPosition, ready, selectedId]);
 
   if (contextLost) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center bg-void">
-        <div className="rounded border border-panel-edge bg-panel px-5 py-4 text-center">
+      <div className="absolute inset-0 flex items-center justify-center bg-void-deep">
+        <div className="glass-card rounded p-5 text-center max-w-xs">
           <p className="font-mono text-xs uppercase tracking-wider text-amber">
             Graphics context lost
           </p>
-          <p className="mt-2 max-w-xs font-mono text-[11px] text-grey">
-            Your device reclaimed graphics memory, often from too many open
-            tabs. Close some tabs, then reload.
+          <p className="mt-2 font-mono text-[11px] text-grey">
+            Your device reclaimed graphics memory. Close some tabs, then reload.
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="mt-3 rounded bg-cyan-dim px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-cyan"
+            className="mt-3 rounded bg-cyan-dim px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-cyan hover:bg-cyan hover:text-void-deep transition-colors"
           >
             Reload
           </button>
@@ -228,12 +185,13 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
         maximumRenderTimeChange={Infinity}
         msaaSamples={1}
       >
+        {/* Observer pin */}
         {ready && picked && (
           <Entity position={Cesium.Cartesian3.fromDegrees(picked.lon, picked.lat, 0)}>
             <PointGraphics
-              pixelSize={14}
+              pixelSize={12}
               color={Cesium.Color.fromCssColorString("#27e1c1")}
-              outlineColor={Cesium.Color.fromCssColorString("#05080d")}
+              outlineColor={Cesium.Color.fromCssColorString("#020408")}
               outlineWidth={2}
               heightReference={Cesium.HeightReference.CLAMP_TO_GROUND}
               disableDepthTestDistance={Number.POSITIVE_INFINITY}
@@ -241,35 +199,49 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
           </Entity>
         )}
 
+        {/* Satellite sub-point blips */}
         {ready &&
-          satelliteBlips?.map((blip) => (
-            <Entity
-              key={blip.id}
-              position={Cesium.Cartesian3.fromDegrees(blip.lon, blip.lat, 0)}
-            >
-              <PointGraphics
-                pixelSize={blip.isIss ? 9 : 4}
-                color={Cesium.Color.fromCssColorString(blip.isIss ? "#ff8a3d" : "#5b6b82")}
-                outlineColor={Cesium.Color.fromCssColorString("#05080d")}
-                outlineWidth={1}
-                disableDepthTestDistance={Number.POSITIVE_INFINITY}
-              />
-            </Entity>
-          ))}
+          satelliteBlips?.map((blip) => {
+            const isSelected = blip.id === selectedId;
+            const color = blip.isIss
+              ? "#ff8a3d"
+              : isSelected
+                ? "#27e1c1"
+                : "#3d5a7a";
+            return (
+              <Entity
+                key={blip.id}
+                position={Cesium.Cartesian3.fromDegrees(blip.lon, blip.lat, 0)}
+              >
+                <PointGraphics
+                  pixelSize={blip.isIss ? 9 : isSelected ? 10 : 4}
+                  color={Cesium.Color.fromCssColorString(color)}
+                  outlineColor={Cesium.Color.fromCssColorString(
+                    isSelected ? "#27e1c1" : "#020408"
+                  )}
+                  outlineWidth={isSelected ? 3 : 1}
+                  disableDepthTestDistance={Number.POSITIVE_INFINITY}
+                />
+              </Entity>
+            );
+          })}
 
+        {/* ISS real-time position */}
         {ready && issPosition && (
           <Entity position={Cesium.Cartesian3.fromDegrees(issPosition.lon, issPosition.lat, 0)}>
             <PointGraphics
-              pixelSize={10}
+              pixelSize={11}
               color={Cesium.Color.fromCssColorString("#ff8a3d")}
-              outlineColor={Cesium.Color.fromCssColorString("#05080d")}
+              outlineColor={Cesium.Color.fromCssColorString("#020408")}
               outlineWidth={2}
               disableDepthTestDistance={Number.POSITIVE_INFINITY}
             />
             <LabelGraphics
               text="ISS"
-              font="500 12px IBM Plex Mono, monospace"
+              font="500 11px IBM Plex Mono, monospace"
               fillColor={Cesium.Color.fromCssColorString("#ff8a3d")}
+              outlineColor={Cesium.Color.fromCssColorString("#020408")}
+              outlineWidth={2}
               pixelOffset={new Cesium.Cartesian2(0, -18)}
               disableDepthTestDistance={Number.POSITIVE_INFINITY}
             />
