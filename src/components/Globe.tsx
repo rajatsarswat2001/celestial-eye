@@ -293,14 +293,14 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition, sel
             <Entity key={`trail-${trail.id}`}>
               <PolylineGraphics
                 positions={positions}
-                width={trail.id === "iss" ? 2 : 1.5}
+                width={trail.id === "iss" ? 2 : 4}
                 material={
                   new Cesium.PolylineGlowMaterialProperty({
-                    glowPower: 0.1,
+                    glowPower: trail.id === "iss" ? 0.1 : 0.25,
                     taperPower: 0.5,
                     color: Cesium.Color.fromCssColorString(
-                      trail.id === "iss" ? "#ff8a3d" : "#27e1c1"
-                    ).withAlpha(0.5),
+                      trail.id === "iss" ? "#ff8a3d" : "#00ffff"
+                    ).withAlpha(trail.id === "iss" ? 0.5 : 0.85),
                   })
                 }
               />
