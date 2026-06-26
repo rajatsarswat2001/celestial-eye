@@ -102,6 +102,14 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
       setContextLost(true);
     }
 
+    function onWindowResize() {
+      const viewer = viewerRef.current?.cesiumElement;
+      if (!viewer || viewer.isDestroyed()) return;
+      viewer.resize();
+      viewer.scene.requestRender();
+    }
+    window.addEventListener("resize", onWindowResize);
+
     // resium constructs the underlying Cesium.Viewer inside its own
     // mount-time effects, which normally finish before this parent effect
     // runs (child effects commit before parent effects on the same mount).
@@ -114,6 +122,7 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
         if (!cancelled) requestAnimationFrame(trySetup);
         return;
       }
+      const activeViewer: Cesium.Viewer = viewer;
 
       // Void-black backdrop instead of Cesium's default blue sky — this is
       // an instrument console, not a tourist globe. We skip skyBox (depends
@@ -127,16 +136,28 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0b1220");
       viewer.scene.fog.enabled = false;
 
-      // Cesium's raw default camera position is an awkward tight zoom, not
-      // a clean full-Earth view — frame the whole globe explicitly. Roughly
-      // 4x Earth's radius gives margin on every side without the planet
-      // looking tiny. requestRenderMode is on, so we follow up with an
-      // explicit render or this would otherwise sit un-rendered until the
-      // next state change triggers one.
-      viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(0, 10, 25_000_000),
-      });
-      viewer.scene.requestRender();
+      // Cesium sizes its internal canvas/frustum based on the container's
+      // actual laid-out dimensions at the moment it reads them. If that
+      // happens before the browser has finished laying out our absolutely
+      // positioned full-screen container (a real risk on first paint), the
+      // camera ends up framed for a near-zero-size viewport — which shows
+      // up exactly as "globe rendered tiny in a corner," not a crash, since
+      // everything else still works. We force an explicit resize and
+      // re-apply the camera view across a few animation frames, after
+      // layout has definitely settled, rather than trusting Cesium's own
+      // initial measurement timing on the very first frame.
+      function frameGlobe() {
+        if (activeViewer.isDestroyed()) return;
+        activeViewer.resize();
+        activeViewer.camera.setView({
+          destination: Cesium.Cartesian3.fromDegrees(0, 10, 25_000_000),
+        });
+        activeViewer.scene.requestRender();
+      }
+
+      frameGlobe();
+      requestAnimationFrame(frameGlobe);
+      requestAnimationFrame(() => requestAnimationFrame(frameGlobe));
 
       canvas = viewer.scene.canvas;
       canvas.addEventListener("webglcontextlost", onContextLost, false);
@@ -152,6 +173,7 @@ export default function Globe({ onPick, picked, satelliteBlips, issPosition }: G
       cancelled = true;
       handler?.destroy();
       canvas?.removeEventListener("webglcontextlost", onContextLost, false);
+      window.removeEventListener("resize", onWindowResize);
     };
   }, [handleClick]);
 
